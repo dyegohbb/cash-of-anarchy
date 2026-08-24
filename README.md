@@ -14,7 +14,9 @@ MVP gratuito para registrar entradas e saídas em uma planilha Google por uma in
 - categorias e carteiras carregadas dinamicamente da aba `Configuracoes`;
 - competência e data da compra;
 - compras à vista e parceladas por valor total ou valor da parcela;
-- `purchaseId` único por compra, compartilhado por todas as parcelas.
+- `purchaseId` único por compra, compartilhado por todas as parcelas;
+- gerenciamento de recorrências mensais com criação, listagem, edição e status;
+- geração incremental protegida pela combinação `recurringId + competência`.
 
 ## Rodar o frontend
 
@@ -45,7 +47,7 @@ No GitHub, cadastre `VITE_ACCESS_PASSWORD` em **Settings → Secrets and variabl
 5. Clique em **Implantar → Nova implantação → Aplicativo da Web**.
 6. Execute como **você** e escolha quem pode acessar. Para um frontend público sem login, use **Qualquer pessoa**.
 7. Copie a URL terminada em `/exec`, crie `.env` a partir de `.env.example` e preencha `VITE_APPS_SCRIPT_URL`.
-8. Reinicie o frontend e entre com a senha. A aplicação inicializará automaticamente as abas `Lancamentos` e `Configuracoes`.
+8. Reinicie o frontend e entre com a senha. A aplicação inicializará automaticamente as abas `Lancamentos`, `Configuracoes` e `Recorrentes`.
 
 ### Aba Configuracoes
 
@@ -60,6 +62,12 @@ Edite as linhas dessa aba para controlar as opções do formulário. Depois, use
 ### Aba Lancamentos
 
 As novas colunas são adicionadas preservando os registros antigos. A antiga coluna `Data` é migrada para `Data de inserção`, sem manter as duas colunas duplicadas. Linhas anteriores podem permanecer sem `purchaseId`; toda compra nova recebe um UUID. Compras parceladas geram uma linha por parcela e reutilizam o mesmo `purchaseId`.
+
+### Aba Recorrentes
+
+Armazena as regras mensais separadamente dos lançamentos efetivos. Cada regra possui `recurringId`, dados financeiros, início, competência inicial, periodicidade, status e datas de auditoria. Criar uma recorrência não gera lançamentos futuros antecipadamente.
+
+O backend disponibiliza `processarRecorrentes` para processar uma competência quando houver um fluxo de consulta ou fechamento. A chave lógica `recurringId + competência` impede duplicação. Lançamentos gerados têm `ID` e `purchaseId` próprios e compartilham o `recurringId` da regra.
 
 > Atenção: um site estático público não consegue guardar um segredo. Este MVP limita as ações e valida os campos, mas qualquer pessoa que descubra o endpoint poderá enviar lançamentos. Antes de uso real, adicione autenticação (por exemplo, login Google validado no Apps Script) ou restrinja a implantação à sua conta.
 

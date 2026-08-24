@@ -31,6 +31,17 @@ function toCompetence(monthValue) {
   return year && month ? `${month}/${year}` : ''
 }
 
+function fromCompetence(value) {
+  const [month, year] = String(value || '').split('/')
+  return year && month ? `${year}-${month}` : localMonthValue()
+}
+
+function formatDateBr(value) {
+  if (!value) return '—'
+  const [year, month, day] = value.split('-')
+  return `${day}/${month}/${year}`
+}
+
 function formatMoney(value) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0)
 }
@@ -100,6 +111,92 @@ function AccessGate({ onAccess }) {
   </section></main>
 }
 
+function RecurringScreen({ settings, onBack }) {
+  const emptyForm = () => ({
+    recurringId: '', descricao: '', valor: '', tipo: 'Saída',
+    categoria: settings.categorias[0] || '', carteira: settings.carteiras[0] || '',
+    dataInicio: localDateValue(), competenciaInicial: localMonthValue(),
+    periodicidade: 'Mensal', status: 'Ativa',
+  })
+  const [items, setItems] = useState([])
+  const [mode, setMode] = useState('list')
+  const [form, setForm] = useState(emptyForm)
+  const [loading, setLoading] = useState('listar')
+  const [message, setMessage] = useState({ kind: '', text: '' })
+
+  async function loadItems() {
+    setLoading('listar')
+    try {
+      const result = await callApi({ action: 'listarRecorrentes' })
+      setItems(result.recorrentes || [])
+    } catch (error) { setMessage({ kind: 'error', text: error.message }) }
+    finally { setLoading('') }
+  }
+
+  useEffect(() => { loadItems() }, [])
+
+  function openNew() {
+    setForm(emptyForm()); setMessage({ kind: '', text: '' }); setMode('form')
+  }
+
+  function openEdit(item) {
+    setForm({
+      recurringId: item.recurringId, descricao: item.descricao, valor: String(item.valor), tipo: item.tipo,
+      categoria: item.categoria, carteira: item.carteira, dataInicio: item.dataInicio,
+      competenciaInicial: fromCompetence(item.competenciaInicial), periodicidade: item.periodicidade, status: item.status,
+    })
+    setMessage({ kind: '', text: '' }); setMode('form')
+  }
+
+  async function saveRecurring(event) {
+    event.preventDefault(); setLoading('salvar'); setMessage({ kind: '', text: '' })
+    const editing = Boolean(form.recurringId)
+    try {
+      const result = await callApi({
+        action: editing ? 'atualizarRecorrente' : 'adicionarRecorrente', ...form,
+        valor: Number(form.valor), competenciaInicial: toCompetence(form.competenciaInicial),
+      })
+      setMessage({ kind: 'success', text: result.message })
+      await loadItems(); setMode('list')
+    } catch (error) { setMessage({ kind: 'error', text: error.message }) }
+    finally { setLoading('') }
+  }
+
+  return <main className="shell">
+    <header className="brand"><button className="backButton" onClick={onBack} aria-label="Voltar para novo lançamento">←</button><div><p className="eyebrow">GERENCIAMENTO</p><h1>Lançamentos recorrentes</h1></div></header>
+    <section className="recurringHero"><div><p className="kicker">RECORRÊNCIAS</p><h2>Todo mês.<br /><em>Sem esquecer.</em></h2></div>
+      {mode === 'list' && <button className="submitButton newRecurring" onClick={openNew}>Nova recorrência <span>＋</span></button>}
+    </section>
+
+    {mode === 'list' ? <section className="recurringList" aria-busy={loading === 'listar'}>
+      {loading === 'listar' && <div className="emptyState">Carregando recorrências…</div>}
+      {!loading && !items.length && <div className="emptyState"><strong>Nenhuma recorrência cadastrada.</strong><span>Crie despesas ou receitas que se repetem mensalmente.</span></div>}
+      {items.map((item) => <article className="recurringCard" key={item.recurringId}>
+        <div className="recurringCardTop"><div><span className="recurringCategory">{item.categoria}</span><h3>{item.descricao}</h3></div><span className={`statusBadge ${item.status === 'Ativa' ? 'active' : 'inactive'}`}>{item.status}</span></div>
+        <strong className="recurringValue">{formatMoney(item.valor)}</strong>
+        <dl><div><dt>Carteira</dt><dd>{item.carteira}</dd></div><div><dt>Início</dt><dd>{formatDateBr(item.dataInicio)}</dd></div><div><dt>Competência inicial</dt><dd>{item.competenciaInicial}</dd></div><div><dt>Recorrência</dt><dd>{item.periodicidade}</dd></div></dl>
+        <button className="editButton" onClick={() => openEdit(item)}>Editar recorrência <span>→</span></button>
+      </article>)}
+    </section> : <section className="panel recurringFormPanel">
+      <div className="panelHeading"><div><span>R</span><h3>{form.recurringId ? 'Editar recorrência' : 'Nova recorrência'}</h3></div><button className="cancelButton" onClick={() => setMode('list')}>Cancelar</button></div>
+      <form className="purchaseForm" onSubmit={saveRecurring}>
+        <label className="fieldFull">Descrição<input required maxLength="100" autoCapitalize="sentences" value={form.descricao} onChange={(e) => setForm({ ...form, descricao: e.target.value })} placeholder="Ex.: Netflix" /></label>
+        <label>Valor (R$)<input required min="0.01" step="0.01" type="number" inputMode="decimal" value={form.valor} onChange={(e) => setForm({ ...form, valor: e.target.value })} placeholder="0,00" /></label>
+        <label>Tipo<select value={form.tipo} onChange={(e) => setForm({ ...form, tipo: e.target.value })}><option>Saída</option><option>Entrada</option></select></label>
+        <label>Categoria<select value={form.categoria} onChange={(e) => setForm({ ...form, categoria: e.target.value })}>{settings.categorias.map((item) => <option key={item}>{item}</option>)}</select></label>
+        <label>Carteira<select value={form.carteira} onChange={(e) => setForm({ ...form, carteira: e.target.value })}>{settings.carteiras.map((item) => <option key={item}>{item}</option>)}</select></label>
+        <label>Data de início<input required type="date" value={form.dataInicio} onChange={(e) => setForm({ ...form, dataInicio: e.target.value })} /></label>
+        <label>Competência inicial<input required type="month" value={form.competenciaInicial} onChange={(e) => setForm({ ...form, competenciaInicial: e.target.value })} /></label>
+        <label>Periodicidade<select value={form.periodicidade} onChange={(e) => setForm({ ...form, periodicidade: e.target.value })}><option>Mensal</option></select></label>
+        <label>Status<select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}><option>Ativa</option><option>Inativa</option></select></label>
+        <button className="submitButton fieldFull" disabled={loading === 'salvar'} type="submit">{loading === 'salvar' ? 'Salvando…' : form.recurringId ? 'Salvar alterações' : 'Criar recorrência'} <span>→</span></button>
+      </form>
+    </section>}
+    {message.text && <div className={`notice floatingNotice ${message.kind}`} role="status">{message.text}</div>}
+    <footer><span>RECORRÊNCIAS · MENSAL</span><p>Regras separadas dos lançamentos financeiros.</p><span>V0.4</span></footer>
+  </main>
+}
+
 function App() {
   const [hasAccess, setHasAccess] = useState(() => sessionStorage.getItem(SESSION_KEY) === 'true')
   const [form, setForm] = useState(createInitialForm)
@@ -107,6 +204,7 @@ function App() {
   const [settingsLoaded, setSettingsLoaded] = useState(false)
   const [status, setStatus] = useState({ kind: '', message: '' })
   const [loading, setLoading] = useState('')
+  const [view, setView] = useState('launch')
   const configured = isApiConfigured()
   const isInstallment = form.tipoPagamento === 'Parcelado'
 
@@ -169,13 +267,15 @@ function App() {
   }
 
   if (!hasAccess) return <AccessGate onAccess={grantAccess} />
+  if (view === 'recurring') return <RecurringScreen settings={settings} onBack={() => setView('launch')} />
 
   return <main className="shell">
     <header className="brand"><span className="brandMark" aria-hidden="true">C$</span><div><p className="eyebrow">FINANÇAS SEM BUROCRACIA</p><h1>Cash Of Anarchy</h1></div>
       <span className={`connection ${configured ? 'online' : ''}`}><i /> {configured ? 'Sheets conectado' : 'Modo demonstração'}</span></header>
 
     <section className="hero compactHero"><div><p className="kicker">NOVO LANÇAMENTO</p><h2>Compre agora.<br /><em>Controle depois.</em></h2><p className="lead">Registre compras à vista ou parceladas. Cada parcela entra automaticamente na competência correta.</p></div>
-      <button className="setupButton" disabled={Boolean(loading)} onClick={reloadSettings}><span>{loading === 'configuracoes' ? 'Atualizando…' : 'Atualizar configurações'}</span><small>Recarrega carteiras e categorias da planilha</small></button></section>
+      <div className="heroActions"><button className="setupButton recurringNav" onClick={() => setView('recurring')}><span>Lançamentos recorrentes</span><small>Visualize, crie e edite recorrências</small></button>
+      <button className="setupButton" disabled={Boolean(loading)} onClick={reloadSettings}><span>{loading === 'configuracoes' ? 'Atualizando…' : 'Atualizar configurações'}</span><small>Recarrega carteiras e categorias da planilha</small></button></div></section>
 
     <section className="settingsStrip"><div><span>CARTEIRAS</span><strong>{settings.carteiras.length}</strong></div><div><span>CATEGORIAS</span><strong>{settings.categorias.length}</strong></div><p>Edite a aba “Configuracoes” no Google Sheets e toque em atualizar.</p></section>
 

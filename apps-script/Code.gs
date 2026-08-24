@@ -1,18 +1,26 @@
 const CONFIG = Object.freeze({
   LAUNCHES_SHEET: 'Lancamentos',
   SETTINGS_SHEET: 'Configuracoes',
+  RECURRING_SHEET: 'Recorrentes',
   LAUNCH_HEADERS: [
     'ID', 'purchaseId', 'Descrição', 'Valor', 'Tipo', 'Categoria', 'Carteira',
     'Tipo de pagamento', 'Parcela', 'Total de parcelas', 'Competência',
-    'Data da compra', 'Data de inserção', 'Origem',
+    'Data da compra', 'Data de inserção', 'Origem', 'recurringId',
   ],
   SETTINGS_HEADERS: ['Carteiras', 'Categorias'],
+  RECURRING_HEADERS: [
+    'recurringId', 'Descrição', 'Valor', 'Tipo', 'Categoria', 'Carteira',
+    'Data de início', 'Competência inicial', 'Periodicidade', 'Status',
+    'Data de criação', 'Data de atualização',
+  ],
   DEFAULT_WALLETS: ['Carteira', 'Cartão de crédito 1', 'Cartão de crédito 2'],
   DEFAULT_CATEGORIES: ['Alimentação', 'Lazer', 'Transporte', 'Saúde', 'Moradia', 'Compras', 'Outros'],
   MOVEMENT_TYPES: ['Entrada', 'Saída'],
   PAYMENT_TYPES: ['À vista', 'Parcelado'],
   INSTALLMENT_MODES: ['valorParcela', 'valorTotal'],
   MAX_INSTALLMENTS: 120,
+  RECURRENCE_PERIODS: ['Mensal'],
+  RECURRENCE_STATUSES: ['Ativa', 'Inativa'],
 });
 
 function doGet() {
@@ -25,6 +33,10 @@ function doPost(event) {
     if (payload.action === 'inicializar') return initializeApplication();
     if (payload.action === 'obterConfiguracoes') return getSettingsResponse();
     if (payload.action === 'adicionar') return addPurchase(payload);
+    if (payload.action === 'listarRecorrentes') return listRecurringResponse();
+    if (payload.action === 'adicionarRecorrente') return addRecurring(payload);
+    if (payload.action === 'atualizarRecorrente') return updateRecurring(payload);
+    if (payload.action === 'processarRecorrentes') return processRecurring(payload.competencia);
     return jsonResponse({ ok: false, error: 'Ação não permitida.' });
   } catch (error) {
     console.error(error);
@@ -41,6 +53,8 @@ function initializeApplication() {
     ensureLaunchHeaders(launches);
     const settings = getOrCreateSheet(spreadsheet, CONFIG.SETTINGS_SHEET);
     initializeSettingsSheet(settings);
+    const recurring = getOrCreateSheet(spreadsheet, CONFIG.RECURRING_SHEET);
+    ensureHeaders(recurring, CONFIG.RECURRING_HEADERS);
     return jsonResponse({
       ok: true,
       message: 'Planilhas de lançamentos e configurações estão prontas.',
@@ -86,6 +100,7 @@ function addPurchase(payload) {
       competence: installment.competence,
       purchaseDate: purchase.purchaseDate,
       insertedAt,
+      recurringId: '',
     }));
     sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, headerMap.headers.length).setValues(rows);
   } finally {
@@ -98,6 +113,165 @@ function addPurchase(payload) {
     parcelasCriadas: installments.length,
     message: installments.length === 1 ? 'Lançamento salvo com sucesso.' : `${installments.length} parcelas salvas com sucesso.`,
   });
+}
+
+function listRecurringResponse() {
+  const sheet = getOrCreateSheet(getSpreadsheet(), CONFIG.RECURRING_SHEET);
+  const headerMap = ensureHeaders(sheet, CONFIG.RECURRING_HEADERS);
+  return jsonResponse({ ok: true, recorrentes: readRecurringRows(sheet, headerMap) });
+}
+
+function addRecurring(payload) {
+  const spreadsheet = getSpreadsheet();
+  const settingsSheet = getOrCreateSheet(spreadsheet, CONFIG.SETTINGS_SHEET);
+  initializeSettingsSheet(settingsSheet);
+  const recurring = validateRecurring(payload, readSettings(settingsSheet));
+  const now = new Date();
+  const recurringId = Utilities.getUuid();
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const sheet = getOrCreateSheet(spreadsheet, CONFIG.RECURRING_SHEET);
+    const headerMap = ensureHeaders(sheet, CONFIG.RECURRING_HEADERS);
+    const row = buildRecurringRow(headerMap, { ...recurring, recurringId, createdAt: now, updatedAt: now });
+    sheet.getRange(sheet.getLastRow() + 1, 1, 1, headerMap.headers.length).setValues([row]);
+  } finally {
+    lock.releaseLock();
+  }
+  return jsonResponse({ ok: true, recurringId, message: 'Recorrência criada com sucesso.' });
+}
+
+function updateRecurring(payload) {
+  const recurringId = sanitizeText(payload.recurringId, 100);
+  if (!recurringId) throw new Error('Identificador da recorrência inválido.');
+  const spreadsheet = getSpreadsheet();
+  const settingsSheet = getOrCreateSheet(spreadsheet, CONFIG.SETTINGS_SHEET);
+  initializeSettingsSheet(settingsSheet);
+  const recurring = validateRecurring(payload, readSettings(settingsSheet));
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const sheet = getOrCreateSheet(spreadsheet, CONFIG.RECURRING_SHEET);
+    const headerMap = ensureHeaders(sheet, CONFIG.RECURRING_HEADERS);
+    const existing = findRecurringRow(sheet, headerMap, recurringId);
+    if (!existing) throw new Error('Recorrência não encontrada.');
+    const createdAt = existing.values[headerMap.indexes['Data de criação']] || new Date();
+    const row = buildRecurringRow(headerMap, { ...recurring, recurringId, createdAt, updatedAt: new Date() }, existing.values);
+    sheet.getRange(existing.rowNumber, 1, 1, headerMap.headers.length).setValues([row]);
+  } finally {
+    lock.releaseLock();
+  }
+  return jsonResponse({ ok: true, recurringId, message: 'Recorrência atualizada com sucesso.' });
+}
+
+function processRecurring(rawCompetence) {
+  const competence = normalizeCompetence(rawCompetence);
+  if (!competence) throw new Error('Informe uma competência válida no formato MM/AAAA.');
+  const spreadsheet = getSpreadsheet();
+  const recurringSheet = getOrCreateSheet(spreadsheet, CONFIG.RECURRING_SHEET);
+  const recurringMap = ensureHeaders(recurringSheet, CONFIG.RECURRING_HEADERS);
+  const rules = readRecurringRowsRaw(recurringSheet, recurringMap)
+    .filter((item) => item.status === 'Ativa' && item.periodicity === 'Mensal' && compareCompetences(item.initialCompetence, competence) <= 0);
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  let generated = 0;
+  try {
+    const launches = getOrCreateSheet(spreadsheet, CONFIG.LAUNCHES_SHEET);
+    const launchMap = ensureLaunchHeaders(launches);
+    const existingKeys = readRecurringLaunchKeys(launches, launchMap);
+    const insertedAt = new Date();
+    const rows = [];
+    rules.forEach((rule) => {
+      const key = `${rule.recurringId}|${competence}`;
+      if (existingKeys.has(key)) return;
+      rows.push(buildLaunchRow(launchMap, {
+        id: Utilities.getUuid(), purchaseId: Utilities.getUuid(), recurringId: rule.recurringId,
+        description: rule.description, value: rule.value, movementType: rule.movementType,
+        category: rule.category, wallet: rule.wallet, paymentType: 'À vista',
+        installmentNumber: 1, installmentCount: 1, competence,
+        purchaseDate: dateForCompetence(rule.startDate, competence), insertedAt,
+      }));
+      existingKeys.add(key);
+    });
+    if (rows.length) launches.getRange(launches.getLastRow() + 1, 1, rows.length, launchMap.headers.length).setValues(rows);
+    generated = rows.length;
+  } finally {
+    lock.releaseLock();
+  }
+  return jsonResponse({ ok: true, competencia: competence, lancamentosCriados: generated, message: `${generated} lançamento(s) recorrente(s) criado(s).` });
+}
+
+function validateRecurring(payload, settings) {
+  const description = sanitizeText(payload.descricao, 100);
+  const value = Number(payload.valor);
+  const movementType = sanitizeText(payload.tipo, 10);
+  const category = sanitizeText(payload.categoria, 60);
+  const wallet = sanitizeText(payload.carteira, 60);
+  const startDate = normalizeDate(payload.dataInicio);
+  const initialCompetence = normalizeCompetence(payload.competenciaInicial);
+  const periodicity = sanitizeText(payload.periodicidade, 20);
+  const status = sanitizeText(payload.status, 10);
+  if (!description) throw new Error('Informe a descrição da recorrência.');
+  if (!Number.isFinite(value) || value <= 0 || value > 100000000) throw new Error('Informe um valor válido.');
+  if (!CONFIG.MOVEMENT_TYPES.includes(movementType)) throw new Error('Tipo de movimento inválido.');
+  if (!settings.categorias.includes(category)) throw new Error('Categoria inválida ou removida da configuração.');
+  if (!settings.carteiras.includes(wallet)) throw new Error('Carteira inválida ou removida da configuração.');
+  if (!startDate) throw new Error('Informe uma data de início válida.');
+  if (!initialCompetence) throw new Error('Informe uma competência inicial válida no formato MM/AAAA.');
+  if (!CONFIG.RECURRENCE_PERIODS.includes(periodicity)) throw new Error('Periodicidade inválida.');
+  if (!CONFIG.RECURRENCE_STATUSES.includes(status)) throw new Error('Status da recorrência inválido.');
+  return { description, value, movementType, category, wallet, startDate, initialCompetence, periodicity, status };
+}
+
+function buildRecurringRow(headerMap, data, existingValues) {
+  const row = existingValues ? existingValues.slice(0, headerMap.headers.length) : Array(headerMap.headers.length).fill('');
+  while (row.length < headerMap.headers.length) row.push('');
+  const set = (header, value) => { row[headerMap.indexes[header]] = value; };
+  set('recurringId', data.recurringId); set('Descrição', data.description); set('Valor', data.value);
+  set('Tipo', data.movementType); set('Categoria', data.category); set('Carteira', data.wallet);
+  set('Data de início', data.startDate); set('Competência inicial', data.initialCompetence);
+  set('Periodicidade', data.periodicity); set('Status', data.status);
+  set('Data de criação', data.createdAt); set('Data de atualização', data.updatedAt);
+  return row;
+}
+
+function readRecurringRows(sheet, headerMap) {
+  return readRecurringRowsRaw(sheet, headerMap).map((item) => ({
+    recurringId: item.recurringId, descricao: item.description, valor: item.value, tipo: item.movementType,
+    categoria: item.category, carteira: item.wallet, dataInicio: formatDateForApi(item.startDate),
+    competenciaInicial: item.initialCompetence, periodicidade: item.periodicity, status: item.status,
+  }));
+}
+
+function readRecurringRowsRaw(sheet, headerMap) {
+  if (sheet.getLastRow() < 2) return [];
+  return sheet.getRange(2, 1, sheet.getLastRow() - 1, headerMap.headers.length).getValues()
+    .filter((row) => row[headerMap.indexes['recurringId']])
+    .map((row) => ({
+      recurringId: String(row[headerMap.indexes['recurringId']]), description: String(row[headerMap.indexes['Descrição']] || ''),
+      value: Number(row[headerMap.indexes['Valor']]), movementType: String(row[headerMap.indexes['Tipo']] || ''),
+      category: String(row[headerMap.indexes['Categoria']] || ''), wallet: String(row[headerMap.indexes['Carteira']] || ''),
+      startDate: row[headerMap.indexes['Data de início']], initialCompetence: String(row[headerMap.indexes['Competência inicial']] || ''),
+      periodicity: String(row[headerMap.indexes['Periodicidade']] || ''), status: String(row[headerMap.indexes['Status']] || ''),
+    }));
+}
+
+function findRecurringRow(sheet, headerMap, recurringId) {
+  if (sheet.getLastRow() < 2) return null;
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, headerMap.headers.length).getValues();
+  const index = rows.findIndex((row) => String(row[headerMap.indexes['recurringId']]) === recurringId);
+  return index < 0 ? null : { rowNumber: index + 2, values: rows[index] };
+}
+
+function readRecurringLaunchKeys(sheet, headerMap) {
+  if (sheet.getLastRow() < 2) return new Set();
+  const recurringIndex = headerMap.indexes['recurringId'];
+  const competenceIndex = headerMap.indexes['Competência'];
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, headerMap.headers.length).getValues();
+  return new Set(rows.filter((row) => row[recurringIndex] && row[competenceIndex]).map((row) => `${row[recurringIndex]}|${row[competenceIndex]}`));
 }
 
 function validatePurchase(payload, settings) {
@@ -159,6 +333,7 @@ function buildLaunchRow(headerMap, data) {
   set('Data da compra', data.purchaseDate);
   set('Data de inserção', data.insertedAt);
   set('Origem', 'Frontend');
+  set('recurringId', data.recurringId || '');
   // Mantém a coluna legada de carteira preenchida quando existir.
   set('Forma de pagamento', data.wallet);
   return row;
@@ -179,6 +354,24 @@ function ensureLaunchHeaders(sheet) {
   if (indexes['Valor'] !== undefined) sheet.getRange(2, indexes['Valor'] + 1, Math.max(1, sheet.getMaxRows() - 1), 1).setNumberFormat('R$ #,##0.00');
   if (indexes['Data da compra'] !== undefined) sheet.getRange(2, indexes['Data da compra'] + 1, Math.max(1, sheet.getMaxRows() - 1), 1).setNumberFormat('dd/mm/yyyy');
   if (indexes['Data de inserção'] !== undefined) sheet.getRange(2, indexes['Data de inserção'] + 1, Math.max(1, sheet.getMaxRows() - 1), 1).setNumberFormat('dd/mm/yyyy hh:mm');
+  return { headers: merged, indexes };
+}
+
+function ensureHeaders(sheet, requiredHeaders) {
+  let headers = sheet.getLastColumn() ? sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(String) : [];
+  if (sheet.getLastRow() === 0 || headers.every((header) => !header)) headers = [];
+  const missing = requiredHeaders.filter((header) => !headers.includes(header));
+  const merged = headers.concat(missing);
+  if (missing.length || sheet.getLastRow() === 0) {
+    sheet.getRange(1, 1, 1, merged.length).setValues([merged]).setFontWeight('bold').setBackground('#b7f22f').setFontColor('#11160d');
+    sheet.setFrozenRows(1);
+    sheet.autoResizeColumns(1, merged.length);
+  }
+  const indexes = Object.fromEntries(merged.map((header, index) => [header, index]));
+  if (indexes['Valor'] !== undefined) sheet.getRange(2, indexes['Valor'] + 1, Math.max(1, sheet.getMaxRows() - 1), 1).setNumberFormat('R$ #,##0.00');
+  ['Data de início', 'Data de criação', 'Data de atualização'].forEach((header) => {
+    if (indexes[header] !== undefined) sheet.getRange(2, indexes[header] + 1, Math.max(1, sheet.getMaxRows() - 1), 1).setNumberFormat(header === 'Data de início' ? 'dd/mm/yyyy' : 'dd/mm/yyyy hh:mm');
+  });
   return { headers: merged, indexes };
 }
 
@@ -254,6 +447,24 @@ function addMonthsToCompetence(competence, months) {
   return `${String(date.getUTCMonth() + 1).padStart(2, '0')}/${date.getUTCFullYear()}`;
 }
 
+function compareCompetences(left, right) {
+  const [leftMonth, leftYear] = left.split('/').map(Number);
+  const [rightMonth, rightYear] = right.split('/').map(Number);
+  return (leftYear * 12 + leftMonth) - (rightYear * 12 + rightMonth);
+}
+
+function dateForCompetence(startDate, competence) {
+  const source = startDate instanceof Date ? startDate : new Date(startDate);
+  const [month, year] = competence.split('/').map(Number);
+  const lastDay = new Date(year, month, 0).getDate();
+  return new Date(year, month - 1, Math.min(source.getDate(), lastDay), 12, 0, 0);
+}
+
+function formatDateForApi(value) {
+  if (!(value instanceof Date) || Number.isNaN(value.getTime())) return '';
+  return Utilities.formatDate(value, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+}
+
 function normalizeDate(value) {
   const text = String(value || '').trim();
   const match = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -273,7 +484,7 @@ function sanitizeText(value, maxLength) {
 
 function safeError(error) {
   const message = String(error && error.message || 'Requisição inválida.');
-  const expected = ['SPREADSHEET_ID', 'descrição', 'valor', 'movimento', 'Categoria', 'Carteira', 'pagamento', 'parcelas', 'competência', 'data da compra'];
+  const expected = ['SPREADSHEET_ID', 'descrição', 'valor', 'movimento', 'Categoria', 'Carteira', 'pagamento', 'parcelas', 'competência', 'data da compra', 'recorrência', 'Periodicidade', 'Status', 'data de início'];
   return expected.some((term) => message.toLowerCase().includes(term.toLowerCase())) ? message : 'Não foi possível concluir a operação.';
 }
 
