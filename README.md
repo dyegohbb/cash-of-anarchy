@@ -11,6 +11,10 @@ MVP gratuito para registrar entradas e saídas em uma planilha Google por uma in
 - layout responsivo pronto para GitHub Pages ou Vercel.
 - tela de acesso por senha, com três tentativas e bloqueio de 15 minutos por navegador;
 - inicialização automática da planilha após a senha correta.
+- categorias e carteiras carregadas dinamicamente da aba `Configuracoes`;
+- competência e data da compra;
+- compras à vista e parceladas por valor total ou valor da parcela;
+- `purchaseId` único por compra, compartilhado por todas as parcelas.
 
 ## Rodar o frontend
 
@@ -41,7 +45,21 @@ No GitHub, cadastre `VITE_ACCESS_PASSWORD` em **Settings → Secrets and variabl
 5. Clique em **Implantar → Nova implantação → Aplicativo da Web**.
 6. Execute como **você** e escolha quem pode acessar. Para um frontend público sem login, use **Qualquer pessoa**.
 7. Copie a URL terminada em `/exec`, crie `.env` a partir de `.env.example` e preencha `VITE_APPS_SCRIPT_URL`.
-8. Reinicie o frontend e clique em **Inicializar planilha**.
+8. Reinicie o frontend e entre com a senha. A aplicação inicializará automaticamente as abas `Lancamentos` e `Configuracoes`.
+
+### Aba Configuracoes
+
+A aplicação cria duas colunas:
+
+```text
+Carteiras | Categorias
+```
+
+Edite as linhas dessa aba para controlar as opções do formulário. Depois, use **Atualizar configurações** no frontend. Carteiras e categorias não ficam hardcoded no navegador.
+
+### Aba Lancamentos
+
+As novas colunas são adicionadas sem apagar ou reorganizar registros antigos. Linhas anteriores podem permanecer sem `purchaseId`; toda compra nova recebe um UUID. Compras parceladas geram uma linha por parcela e reutilizam o mesmo `purchaseId`.
 
 > Atenção: um site estático público não consegue guardar um segredo. Este MVP limita as ações e valida os campos, mas qualquer pessoa que descubra o endpoint poderá enviar lançamentos. Antes de uso real, adicione autenticação (por exemplo, login Google validado no Apps Script) ou restrinja a implantação à sua conta.
 

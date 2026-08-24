@@ -6,8 +6,7 @@ export function isApiConfigured() {
 
 export async function callApi(payload) {
   if (!isApiConfigured()) {
-    await new Promise((resolve) => setTimeout(resolve, 650))
-    return { ok: true, demo: true, message: 'Modo demonstração: configure o endereço do Apps Script para gravar no Google Sheets.' }
+    throw new Error('Configure VITE_APPS_SCRIPT_URL para conectar o Google Sheets.')
   }
 
   const response = await fetch(API_URL, {
