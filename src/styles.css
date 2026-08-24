@@ -1,0 +1,59 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600;700;800&display=swap');
+
+:root { color-scheme: dark; font-family: Inter, sans-serif; background: #0d100e; color: #f1f4ec; font-synthesis: none; }
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; min-height: 100vh; background: radial-gradient(circle at 75% 10%, #203224 0, transparent 30%), #0d100e; }
+button, input, select { font: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: wait; opacity: .65; }
+.shell { width: min(1120px, calc(100% - 36px)); margin: auto; min-height: 100vh; display: flex; flex-direction: column; }
+.brand { min-height: 104px; display: flex; align-items: center; gap: 16px; border-bottom: 1px solid #303630; }
+.brandMark { display: grid; place-items: center; width: 46px; aspect-ratio: 1; background: #b7f22f; color: #11160d; font: 800 16px DM Mono; transform: rotate(-3deg); }
+.eyebrow, .kicker, footer, .connection { font: 500 11px DM Mono; letter-spacing: .14em; }
+.eyebrow { color: #7d887c; margin: 0 0 5px; }
+h1 { margin: 0; font-size: 19px; letter-spacing: -.03em; }
+.connection { margin-left: auto; color: #d6bd70; display: flex; align-items: center; gap: 8px; }
+.connection i { width: 7px; height: 7px; border-radius: 50%; background: currentColor; box-shadow: 0 0 12px currentColor; }
+.connection.online { color: #b7f22f; }
+.hero { display: grid; grid-template-columns: 1.4fr .6fr; align-items: end; gap: 40px; padding: 70px 0 54px; }
+.kicker { color: #b7f22f; margin: 0 0 18px; }
+h2 { margin: 0; font-size: clamp(52px, 8vw, 98px); line-height: .88; letter-spacing: -.075em; max-width: 830px; }
+h2 em { color: #b7f22f; font-style: normal; }
+.lead { max-width: 560px; color: #9ca59b; font-size: 17px; line-height: 1.7; margin: 32px 0 0; }
+.setupButton { color: #eef3e9; text-align: left; border: 1px solid #3d463d; border-radius: 4px; padding: 22px; background: #171c18; transition: .2s; }
+.setupButton:hover { border-color: #b7f22f; transform: translateY(-2px); }
+.setupButton span { display: block; font-weight: 700; }
+.setupButton small { display: block; color: #7f8a7f; margin-top: 7px; }
+.panel { background: #141815; border: 1px solid #303630; border-top: 3px solid #b7f22f; padding: 30px; box-shadow: 0 24px 70px #0006; }
+.panelHeading { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #2b302c; padding-bottom: 24px; margin-bottom: 28px; }
+.panelHeading > div { display: flex; align-items: center; gap: 14px; }
+.panelHeading span { color: #b7f22f; font: 500 12px DM Mono; }
+h3 { margin: 0; font-size: 22px; }
+.panelHeading p { margin: 0; color: #758075; font-size: 12px; }
+form { display: grid; grid-template-columns: 1.5fr .8fr .8fr; gap: 20px; align-items: end; }
+label { color: #9ba49a; text-transform: uppercase; letter-spacing: .1em; font: 500 10px DM Mono; }
+label.wide { grid-column: span 2; }
+input, select { width: 100%; margin-top: 9px; padding: 15px 14px; border: 1px solid #343b35; border-radius: 3px; outline: none; color: #f2f5ef; background: #0d100e; }
+input:focus, select:focus { border-color: #b7f22f; box-shadow: 0 0 0 3px #b7f22f18; }
+.submitButton { height: 49px; border: 0; border-radius: 3px; padding: 0 18px; display: flex; justify-content: space-between; align-items: center; background: #b7f22f; color: #11160d; font-weight: 800; }
+.submitButton:hover { background: #c6ff3d; }
+.notice { margin-top: 22px; padding: 14px 16px; border-left: 3px solid #b7f22f; background: #b7f22f10; color: #dff5a9; font-size: 13px; }
+.notice.error { border-color: #ff665e; background: #ff665e10; color: #ffaaa5; }
+.notice.info { border-color: #d6bd70; color: #ead79e; }
+footer { margin-top: auto; padding: 32px 0; display: flex; justify-content: space-between; color: #566057; }
+footer p { margin: 0; }
+@media (max-width: 760px) {
+  .shell { width: min(100% - 24px, 620px); }
+  .brand { min-height: 86px; }
+  .eyebrow { display: none; }
+  .connection { font-size: 9px; letter-spacing: .06em; }
+  .hero { grid-template-columns: 1fr; padding: 48px 0 38px; gap: 28px; }
+  h2 { font-size: clamp(50px, 17vw, 76px); }
+  .lead { font-size: 15px; margin-top: 24px; }
+  .panel { padding: 22px 18px; }
+  .panelHeading { align-items: flex-start; }
+  .panelHeading p { display: none; }
+  form { grid-template-columns: 1fr; }
+  label.wide { grid-column: auto; }
+  footer p { display: none; }
+}
