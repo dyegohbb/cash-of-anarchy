@@ -84,7 +84,7 @@ function AccessGate({ onAccess }) {
       <p>Informe a senha padrão para inicializar a planilha e entrar no sistema.</p>
       <form className="accessForm" onSubmit={handleSubmit}>
         <label>Senha de acesso
-          <input autoFocus required type="password" autoComplete="current-password" value={password} disabled={remainingSeconds > 0 || loading}
+          <input required type="password" autoComplete="current-password" enterKeyHint="go" value={password} disabled={remainingSeconds > 0 || loading}
             onChange={(event) => setPassword(event.target.value)} placeholder="Digite sua senha" />
         </label>
         <button className="submitButton" disabled={remainingSeconds > 0 || loading} type="submit">
@@ -139,8 +139,8 @@ function App() {
     </section>
     <section className="panel"><div className="panelHeading"><div><span>01</span><h3>Novo lançamento</h3></div><p>Os campos marcados são obrigatórios.</p></div>
       <form onSubmit={handleSubmit}>
-        <label className="wide">Descrição<input required maxLength="100" placeholder="Ex.: Venda para João" value={form.descricao} onChange={(e) => setForm({ ...form, descricao: e.target.value })} /></label>
-        <label>Valor (R$)<input required min="0.01" step="0.01" type="number" inputMode="decimal" placeholder="150,00" value={form.valor} onChange={(e) => setForm({ ...form, valor: e.target.value })} /></label>
+        <label className="wide">Descrição<input required maxLength="100" autoCapitalize="sentences" enterKeyHint="next" placeholder="Ex.: Venda para João" value={form.descricao} onChange={(e) => setForm({ ...form, descricao: e.target.value })} /></label>
+        <label>Valor (R$)<input required min="0.01" step="0.01" type="number" inputMode="decimal" enterKeyHint="done" placeholder="150,00" value={form.valor} onChange={(e) => setForm({ ...form, valor: e.target.value })} /></label>
         <label>Tipo<select value={form.tipo} onChange={(e) => setForm({ ...form, tipo: e.target.value })}><option>Entrada</option><option>Saída</option></select></label>
         <label>Forma de pagamento<select value={form.formaPagamento} onChange={(e) => setForm({ ...form, formaPagamento: e.target.value })}><option>Pix</option><option>Dinheiro</option><option>Cartão</option><option>Transferência</option><option>Outro</option></select></label>
         <button className="submitButton" disabled={Boolean(loading)} type="submit">{loading === 'adicionar' ? 'Salvando…' : 'Salvar no Google Sheets'} <span>→</span></button>
