@@ -40,6 +40,14 @@ input:focus, select:focus { border-color: #b7f22f; box-shadow: 0 0 0 3px #b7f22f
 .notice { margin-top: 22px; padding: 14px 16px; border-left: 3px solid #b7f22f; background: #b7f22f10; color: #dff5a9; font-size: 13px; }
 .notice.error { border-color: #ff665e; background: #ff665e10; color: #ffaaa5; }
 .notice.info { border-color: #d6bd70; color: #ead79e; }
+.accessPage { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
+.accessCard { width: min(500px, 100%); padding: 46px; border: 1px solid #303630; border-top: 3px solid #b7f22f; background: #141815; box-shadow: 0 28px 90px #0009; }
+.accessMark { margin-bottom: 30px; }
+.accessCard h1 { margin: 0; font-size: clamp(38px, 8vw, 58px); letter-spacing: -.06em; }
+.accessCard > p:not(.kicker) { margin: 18px 0 28px; color: #919b91; line-height: 1.6; }
+.accessForm { display: grid; grid-template-columns: 1fr; gap: 18px; }
+.accessForm .submitButton { width: 100%; }
+.attemptHint { display: block; margin-top: 18px; color: #687269; line-height: 1.5; }
 footer { margin-top: auto; padding: 32px 0; display: flex; justify-content: space-between; color: #566057; }
 footer p { margin: 0; }
 @media (max-width: 760px) {
@@ -56,4 +64,5 @@ footer p { margin: 0; }
   form { grid-template-columns: 1fr; }
   label.wide { grid-column: auto; }
   footer p { display: none; }
+  .accessCard { padding: 34px 22px; }
 }

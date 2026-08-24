@@ -9,6 +9,8 @@ MVP gratuito para registrar entradas e saídas em uma planilha Google por uma in
 - gravação no Google Sheets via Apps Script;
 - modo demonstração enquanto a API não está configurada;
 - layout responsivo pronto para GitHub Pages ou Vercel.
+- tela de acesso por senha, com três tentativas e bloqueio de 15 minutos por navegador;
+- inicialização automática da planilha após a senha correta.
 
 ## Rodar o frontend
 
@@ -19,6 +21,16 @@ npm install
 copy .env.example .env
 npm run dev
 ```
+
+No `.env`, configure também a senha de acesso:
+
+```env
+VITE_ACCESS_PASSWORD=uma-senha-diferente
+```
+
+No GitHub, cadastre `VITE_ACCESS_PASSWORD` em **Settings → Secrets and variables → Actions → Secrets → Repository secrets**. A Action usa esse valor durante a compilação.
+
+> Esta senha é uma barreira de interface, não autenticação segura. Como todo valor `VITE_*` é incorporado ao JavaScript público, uma pessoa com conhecimento técnico consegue descobri-la e também limpar o bloqueio local. Proteção real exige validação no backend.
 
 ## Configurar Google Sheets + Apps Script
 
