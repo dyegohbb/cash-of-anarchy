@@ -15,21 +15,11 @@ h1 { margin: 0; font-size: 19px; letter-spacing: -.03em; }
 .connection { margin-left: auto; color: #d6bd70; display: flex; align-items: center; gap: 8px; }
 .connection i { width: 7px; height: 7px; border-radius: 50%; background: currentColor; box-shadow: 0 0 12px currentColor; }
 .connection.online { color: #b7f22f; }
-.userBox { margin-left: auto; display: flex; align-items: center; gap: 18px; }
-.userBox div { text-align: right; }
-.userBox strong, .userBox small { display: block; }
-.userBox strong { font-size: 13px; }
-.userBox small { color: #748075; margin-top: 4px; }
-.userBox button { border: 1px solid #3d463d; color: #c5ccc4; background: transparent; padding: 9px 13px; border-radius: 3px; }
-.userBox button:hover { border-color: #b7f22f; color: #b7f22f; }
 .hero { display: grid; grid-template-columns: 1.4fr .6fr; align-items: end; gap: 40px; padding: 70px 0 54px; }
 .kicker { color: #b7f22f; margin: 0 0 18px; }
 h2 { margin: 0; font-size: clamp(52px, 8vw, 98px); line-height: .88; letter-spacing: -.075em; max-width: 830px; }
 h2 em { color: #b7f22f; font-style: normal; }
 .lead { max-width: 560px; color: #9ca59b; font-size: 17px; line-height: 1.7; margin: 32px 0 0; }
-.compactHero { padding: 55px 0 42px; align-items: center; }
-.compactHero h2 { font-size: clamp(48px, 7vw, 82px); }
-.compactHero .connection { justify-self: end; }
 .setupButton { color: #eef3e9; text-align: left; border: 1px solid #3d463d; border-radius: 4px; padding: 22px; background: #171c18; transition: .2s; }
 .setupButton:hover { border-color: #b7f22f; transform: translateY(-2px); }
 .setupButton span { display: block; font-weight: 700; }
@@ -50,17 +40,6 @@ input:focus, select:focus { border-color: #b7f22f; box-shadow: 0 0 0 3px #b7f22f
 .notice { margin-top: 22px; padding: 14px 16px; border-left: 3px solid #b7f22f; background: #b7f22f10; color: #dff5a9; font-size: 13px; }
 .notice.error { border-color: #ff665e; background: #ff665e10; color: #ffaaa5; }
 .notice.info { border-color: #d6bd70; color: #ead79e; }
-.settingsPanel { margin-bottom: 22px; }
-.settingsForm { grid-template-columns: 1fr 280px; }
-.helper { margin: 15px 0 0; color: #778178; font-size: 12px; }
-.disabledPanel { opacity: .58; }
-.loginPage { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
-.loginCard { width: min(540px, 100%); border: 1px solid #303630; border-top: 3px solid #b7f22f; background: #141815; padding: 48px; text-align: center; box-shadow: 0 30px 90px #0008; }
-.loginMark { margin: 0 auto 28px; }
-.loginCard h1 { font-size: clamp(36px, 7vw, 56px); line-height: 1; }
-.loginCard h1 em { color: #b7f22f; font-style: normal; }
-.loginCard > p:not(.kicker) { color: #929c92; line-height: 1.6; }
-.googleButton { min-height: 44px; display: flex; justify-content: center; margin-top: 28px; }
 footer { margin-top: auto; padding: 32px 0; display: flex; justify-content: space-between; color: #566057; }
 footer p { margin: 0; }
 @media (max-width: 760px) {
@@ -68,8 +47,6 @@ footer p { margin: 0; }
   .brand { min-height: 86px; }
   .eyebrow { display: none; }
   .connection { font-size: 9px; letter-spacing: .06em; }
-  .userBox strong { max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .userBox small { display: none; }
   .hero { grid-template-columns: 1fr; padding: 48px 0 38px; gap: 28px; }
   h2 { font-size: clamp(50px, 17vw, 76px); }
   .lead { font-size: 15px; margin-top: 24px; }
@@ -77,8 +54,6 @@ footer p { margin: 0; }
   .panelHeading { align-items: flex-start; }
   .panelHeading p { display: none; }
   form { grid-template-columns: 1fr; }
-  .settingsForm { grid-template-columns: 1fr; }
   label.wide { grid-column: auto; }
   footer p { display: none; }
-  .loginCard { padding: 36px 22px; }
 }

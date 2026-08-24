@@ -4,15 +4,16 @@ export function isApiConfigured() {
   return Boolean(API_URL && !API_URL.includes('SEU_DEPLOYMENT_ID'))
 }
 
-export async function callApi(payload, idToken = '') {
+export async function callApi(payload) {
   if (!isApiConfigured()) {
-    throw new Error('Configure VITE_APPS_SCRIPT_URL antes de usar o aplicativo.')
+    await new Promise((resolve) => setTimeout(resolve, 650))
+    return { ok: true, demo: true, message: 'Modo demonstração: configure o endereço do Apps Script para gravar no Google Sheets.' }
   }
 
   const response = await fetch(API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify({ ...payload, idToken }),
+    body: JSON.stringify(payload),
   })
 
   const data = await response.json()

@@ -2,8 +2,6 @@
 
 MVP gratuito para registrar entradas e saídas em uma planilha Google por uma interface React. O Google Apps Script funciona como a API serverless; nenhuma credencial privada fica no navegador.
 
-> A versão 0.2 adiciona Login com Google e uma planilha configurável por usuário. Siga o guia completo em [`docs/CONFIGURACAO-V0.2.md`](docs/CONFIGURACAO-V0.2.md).
-
 ## O que já funciona
 
 - botão para criar a aba `Lancamentos` com cabeçalhos e formatação;
@@ -11,8 +9,6 @@ MVP gratuito para registrar entradas e saídas em uma planilha Google por uma in
 - gravação no Google Sheets via Apps Script;
 - modo demonstração enquanto a API não está configurada;
 - layout responsivo pronto para GitHub Pages ou Vercel.
-- login com conta Google e validação do token no Apps Script;
-- armazenamento da última planilha escolhida por usuário.
 
 ## Rodar o frontend
 
