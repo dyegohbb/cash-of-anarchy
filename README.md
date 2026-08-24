@@ -41,7 +41,14 @@ Importe o repositório, mantenha o preset Vite e cadastre `VITE_APPS_SCRIPT_URL`
 
 ### GitHub Pages
 
-O projeto também gera arquivos estáticos. Configure uma GitHub Action para executar `npm ci && npm run build` e publicar a pasta `dist`. Para repositório de projeto, defina a opção `base` do Vite com `/cash-of-anarchy/`.
+O projeto já inclui uma GitHub Action que gera e publica o site. No GitHub:
+
+1. Abra **Settings → Secrets and variables → Actions → Variables**.
+2. Crie `VITE_APPS_SCRIPT_URL` com a URL `/exec` do Apps Script.
+3. Abra **Settings → Pages** e selecione **GitHub Actions** em *Source*.
+4. Envie uma alteração para `develop` ou `main`, ou execute manualmente a ação **Publicar no GitHub Pages**.
+
+O endereço padrão será `https://SEU_USUARIO.github.io/cash-of-anarchy/`.
 
 ## Próximos passos sugeridos
 
