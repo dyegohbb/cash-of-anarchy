@@ -59,7 +59,7 @@ Edite as linhas dessa aba para controlar as opções do formulário. Depois, use
 
 ### Aba Lancamentos
 
-As novas colunas são adicionadas sem apagar ou reorganizar registros antigos. Linhas anteriores podem permanecer sem `purchaseId`; toda compra nova recebe um UUID. Compras parceladas geram uma linha por parcela e reutilizam o mesmo `purchaseId`.
+As novas colunas são adicionadas preservando os registros antigos. A antiga coluna `Data` é migrada para `Data de inserção`, sem manter as duas colunas duplicadas. Linhas anteriores podem permanecer sem `purchaseId`; toda compra nova recebe um UUID. Compras parceladas geram uma linha por parcela e reutilizam o mesmo `purchaseId`.
 
 > Atenção: um site estático público não consegue guardar um segredo. Este MVP limita as ações e valida os campos, mas qualquer pessoa que descubra o endpoint poderá enviar lançamentos. Antes de uso real, adicione autenticação (por exemplo, login Google validado no Apps Script) ou restrinja a implantação à sua conta.
 

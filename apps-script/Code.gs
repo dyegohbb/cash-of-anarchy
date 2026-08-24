@@ -159,13 +159,13 @@ function buildLaunchRow(headerMap, data) {
   set('Data da compra', data.purchaseDate);
   set('Data de inserção', data.insertedAt);
   set('Origem', 'Frontend');
-  // Mantém colunas legadas preenchidas quando existirem.
-  set('Data', data.insertedAt);
+  // Mantém a coluna legada de carteira preenchida quando existir.
   set('Forma de pagamento', data.wallet);
   return row;
 }
 
 function ensureLaunchHeaders(sheet) {
+  migrateLegacyDateColumn(sheet);
   let headers = sheet.getLastColumn() ? sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(String) : [];
   if (sheet.getLastRow() === 0 || headers.every((header) => !header)) headers = [];
   const missing = CONFIG.LAUNCH_HEADERS.filter((header) => !headers.includes(header));
@@ -180,6 +180,37 @@ function ensureLaunchHeaders(sheet) {
   if (indexes['Data da compra'] !== undefined) sheet.getRange(2, indexes['Data da compra'] + 1, Math.max(1, sheet.getMaxRows() - 1), 1).setNumberFormat('dd/mm/yyyy');
   if (indexes['Data de inserção'] !== undefined) sheet.getRange(2, indexes['Data de inserção'] + 1, Math.max(1, sheet.getMaxRows() - 1), 1).setNumberFormat('dd/mm/yyyy hh:mm');
   return { headers: merged, indexes };
+}
+
+function migrateLegacyDateColumn(sheet) {
+  if (sheet.getLastRow() < 1 || sheet.getLastColumn() < 1) return;
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(String);
+  const legacyIndex = headers.indexOf('Data');
+  const insertionIndex = headers.indexOf('Data de inserção');
+  if (legacyIndex < 0) return;
+
+  // Se só existe a coluna antiga, renomeá-la preserva cabeçalho, dados e posição.
+  if (insertionIndex < 0) {
+    sheet.getRange(1, legacyIndex + 1).setValue('Data de inserção');
+    return;
+  }
+
+  // Se as duas existem, preserva o valor antigo apenas onde o novo está vazio.
+  if (sheet.getLastRow() > 1) {
+    const rowCount = sheet.getLastRow() - 1;
+    const legacyValues = sheet.getRange(2, legacyIndex + 1, rowCount, 1).getValues();
+    const insertionRange = sheet.getRange(2, insertionIndex + 1, rowCount, 1);
+    const insertionValues = insertionRange.getValues();
+    let changed = false;
+    for (let index = 0; index < rowCount; index += 1) {
+      if ((insertionValues[index][0] === '' || insertionValues[index][0] === null) && legacyValues[index][0] !== '') {
+        insertionValues[index][0] = legacyValues[index][0];
+        changed = true;
+      }
+    }
+    if (changed) insertionRange.setValues(insertionValues);
+  }
+  sheet.deleteColumn(legacyIndex + 1);
 }
 
 function initializeSettingsSheet(sheet) {

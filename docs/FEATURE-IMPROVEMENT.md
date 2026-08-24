@@ -53,7 +53,7 @@ Origem
 
 ## Compatibilidade
 
-A migração apenas acrescenta colunas ausentes ao final do cabeçalho existente. Linhas antigas não são alteradas e podem permanecer com `purchaseId` vazio. Colunas legadas como `Data` e `Forma de pagamento` continuam sendo preenchidas quando já existirem.
+A migração acrescenta colunas ausentes sem descartar registros antigos. A coluna legada `Data` é consolidada em `Data de inserção`: quando apenas `Data` existe, ela é renomeada; quando ambas existem, valores ausentes são recuperados e a coluna duplicada é removida. Linhas antigas podem permanecer com `purchaseId` vazio. A coluna legada `Forma de pagamento` continua sendo preenchida quando já existir.
 
 ## Atualização do Apps Script
 
