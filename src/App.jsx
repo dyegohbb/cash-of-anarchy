@@ -15,14 +15,15 @@ function localDateValue() {
 
 function localMonthValue() {
   const now = new Date()
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+  return `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}`
 }
 
 function createInitialForm() {
   return {
     descricao: '', valor: '', tipo: 'Saída', categoria: '', carteira: '',
     tipoPagamento: 'À vista', modoParcelamento: 'valorParcela', parcelas: '2',
-    competencia: localMonthValue(), dataCompra: localDateValue(),
+    competencia: localMonthValue(), dataLancamento: localDateValue(),
   }
 }
 
@@ -36,14 +37,19 @@ function fromCompetence(value) {
   return year && month ? `${year}-${month}` : localMonthValue()
 }
 
+function competenceReference(value) {
+  const [year, month] = String(value || '').split('-')
+  return year && month ? `01/${month}/${year}` : '—'
+}
+
 function formatDateBr(value) {
   if (!value) return '—'
   const [year, month, day] = value.split('-')
   return `${day}/${month}/${year}`
 }
 
-function formatMoney(value) {
-  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0)
+function formatSignedMoney(value) {
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', signDisplay: 'always' }).format(value || 0)
 }
 
 function AccessGate({ onAccess }) {
@@ -141,7 +147,7 @@ function RecurringScreen({ settings, onBack }) {
 
   function openEdit(item) {
     setForm({
-      recurringId: item.recurringId, descricao: item.descricao, valor: String(item.valor), tipo: item.tipo,
+      recurringId: item.recurringId, descricao: item.descricao, valor: String(Math.abs(item.valor)), tipo: item.tipo,
       categoria: item.categoria, carteira: item.carteira, dataInicio: item.dataInicio,
       competenciaInicial: fromCompetence(item.competenciaInicial), periodicidade: item.periodicidade, status: item.status,
     })
@@ -173,20 +179,20 @@ function RecurringScreen({ settings, onBack }) {
       {!loading && !items.length && <div className="emptyState"><strong>Nenhuma recorrência cadastrada.</strong><span>Crie despesas ou receitas que se repetem mensalmente.</span></div>}
       {items.map((item) => <article className="recurringCard" key={item.recurringId}>
         <div className="recurringCardTop"><div><span className="recurringCategory">{item.categoria}</span><h3>{item.descricao}</h3></div><span className={`statusBadge ${item.status === 'Ativa' ? 'active' : 'inactive'}`}>{item.status}</span></div>
-        <strong className="recurringValue">{formatMoney(item.valor)}</strong>
+        <strong className={`recurringValue ${item.valor < 0 ? 'amountNegative' : 'amountPositive'}`}>{formatSignedMoney(item.valor)}</strong>
         <dl><div><dt>Carteira</dt><dd>{item.carteira}</dd></div><div><dt>Início</dt><dd>{formatDateBr(item.dataInicio)}</dd></div><div><dt>Competência inicial</dt><dd>{item.competenciaInicial}</dd></div><div><dt>Recorrência</dt><dd>{item.periodicidade}</dd></div></dl>
         <button className="editButton" onClick={() => openEdit(item)}>Editar recorrência <span>→</span></button>
       </article>)}
     </section> : <section className="panel recurringFormPanel">
       <div className="panelHeading"><div><span>R</span><h3>{form.recurringId ? 'Editar recorrência' : 'Nova recorrência'}</h3></div><button className="cancelButton" onClick={() => setMode('list')}>Cancelar</button></div>
-      <form className="purchaseForm" onSubmit={saveRecurring}>
+      <form className="launchForm" onSubmit={saveRecurring}>
         <label className="fieldFull">Descrição<input required maxLength="100" autoCapitalize="sentences" value={form.descricao} onChange={(e) => setForm({ ...form, descricao: e.target.value })} placeholder="Ex.: Netflix" /></label>
         <label>Valor (R$)<input required min="0.01" step="0.01" type="number" inputMode="decimal" value={form.valor} onChange={(e) => setForm({ ...form, valor: e.target.value })} placeholder="0,00" /></label>
         <label>Tipo<select value={form.tipo} onChange={(e) => setForm({ ...form, tipo: e.target.value })}><option>Saída</option><option>Entrada</option></select></label>
         <label>Categoria<select value={form.categoria} onChange={(e) => setForm({ ...form, categoria: e.target.value })}>{settings.categorias.map((item) => <option key={item}>{item}</option>)}</select></label>
         <label>Carteira<select value={form.carteira} onChange={(e) => setForm({ ...form, carteira: e.target.value })}>{settings.carteiras.map((item) => <option key={item}>{item}</option>)}</select></label>
         <label>Data de início<input required type="date" value={form.dataInicio} onChange={(e) => setForm({ ...form, dataInicio: e.target.value })} /></label>
-        <label>Competência inicial<input required type="month" value={form.competenciaInicial} onChange={(e) => setForm({ ...form, competenciaInicial: e.target.value })} /></label>
+        <label>Competência inicial<input required type="month" value={form.competenciaInicial} onChange={(e) => setForm({ ...form, competenciaInicial: e.target.value })} /><small className="fieldHint">Referência: {competenceReference(form.competenciaInicial)}</small></label>
         <label>Periodicidade<select value={form.periodicidade} onChange={(e) => setForm({ ...form, periodicidade: e.target.value })}><option>Mensal</option></select></label>
         <label>Status<select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}><option>Ativa</option><option>Inativa</option></select></label>
         <button className="submitButton fieldFull" disabled={loading === 'salvar'} type="submit">{loading === 'salvar' ? 'Salvando…' : form.recurringId ? 'Salvar alterações' : 'Criar recorrência'} <span>→</span></button>
@@ -226,14 +232,15 @@ function App() {
     }))
   }, [settings])
 
-  const purchaseSummary = useMemo(() => {
+  const launchSummary = useMemo(() => {
     const value = Number(form.valor) || 0
     const count = isInstallment ? Number(form.parcelas) || 0 : 1
-    if (!isInstallment) return { total: value, installment: value }
-    return form.modoParcelamento === 'valorTotal'
+    const summary = !isInstallment ? { total: value, installment: value } : form.modoParcelamento === 'valorTotal'
       ? { total: value, installment: count ? value / count : 0 }
       : { total: value * count, installment: value }
-  }, [form.valor, form.parcelas, form.modoParcelamento, isInstallment])
+    const sign = form.tipo === 'Saída' ? -1 : 1
+    return { total: summary.total * sign, installment: summary.installment * sign }
+  }, [form.valor, form.parcelas, form.modoParcelamento, form.tipo, isInstallment])
 
   function grantAccess(result) {
     setSettings(result.configuracoes || { carteiras: [], categorias: [] })
@@ -273,20 +280,20 @@ function App() {
     <header className="brand"><span className="brandMark" aria-hidden="true">C$</span><div><p className="eyebrow">FINANÇAS SEM BUROCRACIA</p><h1>Cash Of Anarchy</h1></div>
       <span className={`connection ${configured ? 'online' : ''}`}><i /> {configured ? 'Sheets conectado' : 'Modo demonstração'}</span></header>
 
-    <section className="hero compactHero"><div><p className="kicker">NOVO LANÇAMENTO</p><h2>Compre agora.<br /><em>Controle depois.</em></h2><p className="lead">Registre compras à vista ou parceladas. Cada parcela entra automaticamente na competência correta.</p></div>
+    <section className="hero compactHero"><div><p className="kicker">NOVO LANÇAMENTO</p><h2>Lance agora.<br /><em>Controle sempre.</em></h2><p className="lead">Registre receitas, despesas e lançamentos parcelados. Entradas ficam positivas; saídas, negativas.</p></div>
       <div className="heroActions"><button className="setupButton recurringNav" onClick={() => setView('recurring')}><span>Lançamentos recorrentes</span><small>Visualize, crie e edite recorrências</small></button>
       <button className="setupButton" disabled={Boolean(loading)} onClick={reloadSettings}><span>{loading === 'configuracoes' ? 'Atualizando…' : 'Atualizar configurações'}</span><small>Recarrega carteiras e categorias da planilha</small></button></div></section>
 
     <section className="settingsStrip"><div><span>CARTEIRAS</span><strong>{settings.carteiras.length}</strong></div><div><span>CATEGORIAS</span><strong>{settings.categorias.length}</strong></div><p>Edite a aba “Configuracoes” no Google Sheets e toque em atualizar.</p></section>
 
-    <section className="panel"><div className="panelHeading"><div><span>01</span><h3>Dados da compra</h3></div><p>Todos os campos são obrigatórios.</p></div>
-      <form className="purchaseForm" onSubmit={handleSubmit}>
+    <section className="panel"><div className="panelHeading"><div><span>01</span><h3>Dados do lançamento</h3></div><p>Todos os campos são obrigatórios.</p></div>
+      <form className="launchForm" onSubmit={handleSubmit}>
         <label className="fieldFull">Descrição<input required maxLength="100" autoCapitalize="sentences" enterKeyHint="next" placeholder="Ex.: Mercado do mês" value={form.descricao} onChange={(e) => setForm({ ...form, descricao: e.target.value })} /></label>
         <label>Movimento<select value={form.tipo} onChange={(e) => setForm({ ...form, tipo: e.target.value })}><option>Saída</option><option>Entrada</option></select></label>
         <label>Categoria<select required value={form.categoria} onChange={(e) => setForm({ ...form, categoria: e.target.value })}>{settings.categorias.map((item) => <option key={item}>{item}</option>)}</select></label>
         <label>Carteira / origem<select required value={form.carteira} onChange={(e) => setForm({ ...form, carteira: e.target.value })}>{settings.carteiras.map((item) => <option key={item}>{item}</option>)}</select></label>
-        <label>Data da compra<input required type="date" value={form.dataCompra} onChange={(e) => setForm({ ...form, dataCompra: e.target.value })} /></label>
-        <label>Competência inicial<input required type="month" value={form.competencia} onChange={(e) => setForm({ ...form, competencia: e.target.value })} /></label>
+        <label>Data do lançamento<input required type="date" value={form.dataLancamento} onChange={(e) => setForm({ ...form, dataLancamento: e.target.value })} /></label>
+        <label>Competência inicial<input required type="month" value={form.competencia} onChange={(e) => setForm({ ...form, competencia: e.target.value })} /><small className="fieldHint">Referência: {competenceReference(form.competencia)}</small></label>
         <label>Tipo de pagamento<select value={form.tipoPagamento} onChange={(e) => setForm({ ...form, tipoPagamento: e.target.value })}><option>À vista</option><option>Parcelado</option></select></label>
 
         {isInstallment && <fieldset className="fieldFull installmentOptions"><legend>Como deseja informar o valor?</legend>
@@ -298,12 +305,12 @@ function App() {
           <input required min="0.01" step="0.01" type="number" inputMode="decimal" enterKeyHint="next" placeholder="0,00" value={form.valor} onChange={(e) => setForm({ ...form, valor: e.target.value })} /></label>
         {isInstallment && <label>Quantidade de parcelas<input required min="2" max="120" step="1" type="number" inputMode="numeric" enterKeyHint="done" value={form.parcelas} onChange={(e) => setForm({ ...form, parcelas: e.target.value })} /></label>}
 
-        <div className="purchaseSummary"><span>{isInstallment ? `${form.parcelas || 0} parcelas de aproximadamente` : 'Total do lançamento'}</span><strong>{formatMoney(purchaseSummary.installment)}</strong>{isInstallment && <small>Total: {formatMoney(purchaseSummary.total)} · centavos ajustados automaticamente</small>}</div>
-        <button className="submitButton savePurchase" disabled={Boolean(loading) || !settings.carteiras.length || !settings.categorias.length} type="submit">{loading === 'adicionar' ? 'Salvando lançamentos…' : isInstallment ? 'Gerar e salvar parcelas' : 'Salvar lançamento'} <span>→</span></button>
+        <div className={`launchSummary ${form.tipo === 'Saída' ? 'amountNegative' : 'amountPositive'}`}><span>{isInstallment ? `${form.parcelas || 0} parcelas de aproximadamente` : form.tipo}</span><strong>{formatSignedMoney(launchSummary.installment)}</strong>{isInstallment && <small>Total: {formatSignedMoney(launchSummary.total)} · centavos ajustados automaticamente</small>}</div>
+        <button className="submitButton saveLaunch" disabled={Boolean(loading) || !settings.carteiras.length || !settings.categorias.length} type="submit">{loading === 'adicionar' ? 'Salvando lançamentos…' : isInstallment ? 'Gerar e salvar parcelas' : 'Salvar lançamento'} <span>→</span></button>
       </form>
       {status.message && <div className={`notice ${status.kind}`} role="status">{status.message}</div>}
     </section>
-    <footer><span>REACT · APPS SCRIPT · SHEETS</span><p>purchaseId agrupa todas as parcelas da mesma compra.</p><span>V0.3</span></footer>
+    <footer><span>REACT · APPS SCRIPT · SHEETS</span><p>groupId agrupa parcelas do mesmo lançamento.</p><span>V0.5</span></footer>
   </main>
 }
 

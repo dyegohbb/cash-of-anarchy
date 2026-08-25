@@ -3,9 +3,9 @@ const CONFIG = Object.freeze({
   SETTINGS_SHEET: 'Configuracoes',
   RECURRING_SHEET: 'Recorrentes',
   LAUNCH_HEADERS: [
-    'ID', 'purchaseId', 'Descrição', 'Valor', 'Tipo', 'Categoria', 'Carteira',
+    'ID', 'groupId', 'Descrição', 'Valor', 'Tipo', 'Categoria', 'Carteira',
     'Tipo de pagamento', 'Parcela', 'Total de parcelas', 'Competência',
-    'Data da compra', 'Data de inserção', 'Origem', 'recurringId',
+    'Data do lançamento', 'Data de inserção', 'Origem', 'recurringId',
   ],
   SETTINGS_HEADERS: ['Carteiras', 'Categorias'],
   RECURRING_HEADERS: [
@@ -32,7 +32,7 @@ function doPost(event) {
     const payload = JSON.parse(event.postData.contents || '{}');
     if (payload.action === 'inicializar') return initializeApplication();
     if (payload.action === 'obterConfiguracoes') return getSettingsResponse();
-    if (payload.action === 'adicionar') return addPurchase(payload);
+    if (payload.action === 'adicionar') return addLaunch(payload);
     if (payload.action === 'listarRecorrentes') return listRecurringResponse();
     if (payload.action === 'adicionarRecorrente') return addRecurring(payload);
     if (payload.action === 'atualizarRecorrente') return updateRecurring(payload);
@@ -71,14 +71,14 @@ function getSettingsResponse() {
   return jsonResponse({ ok: true, configuracoes: readSettings(sheet) });
 }
 
-function addPurchase(payload) {
+function addLaunch(payload) {
   const spreadsheet = getSpreadsheet();
   const settingsSheet = getOrCreateSheet(spreadsheet, CONFIG.SETTINGS_SHEET);
   initializeSettingsSheet(settingsSheet);
   const settings = readSettings(settingsSheet);
-  const purchase = validatePurchase(payload, settings);
-  const installments = createInstallments(purchase);
-  const purchaseId = Utilities.getUuid();
+  const launch = validateLaunch(payload, settings);
+  const installments = createInstallments(launch);
+  const groupId = Utilities.getUuid();
   const insertedAt = new Date();
 
   const lock = LockService.getScriptLock();
@@ -88,17 +88,17 @@ function addPurchase(payload) {
     const headerMap = ensureLaunchHeaders(sheet);
     const rows = installments.map((installment) => buildLaunchRow(headerMap, {
       id: Utilities.getUuid(),
-      purchaseId,
-      description: purchase.description,
+      groupId,
+      description: launch.description,
       value: installment.valueCents / 100,
-      movementType: purchase.movementType,
-      category: purchase.category,
-      wallet: purchase.wallet,
-      paymentType: purchase.paymentType,
+      movementType: launch.movementType,
+      category: launch.category,
+      wallet: launch.wallet,
+      paymentType: launch.paymentType,
       installmentNumber: installment.number,
       installmentCount: installments.length,
       competence: installment.competence,
-      purchaseDate: purchase.purchaseDate,
+      launchDate: launch.launchDate,
       insertedAt,
       recurringId: '',
     }));
@@ -109,7 +109,7 @@ function addPurchase(payload) {
 
   return jsonResponse({
     ok: true,
-    purchaseId,
+    groupId,
     parcelasCriadas: installments.length,
     message: installments.length === 1 ? 'Lançamento salvo com sucesso.' : `${installments.length} parcelas salvas com sucesso.`,
   });
@@ -188,11 +188,11 @@ function processRecurring(rawCompetence) {
       const key = `${rule.recurringId}|${competence}`;
       if (existingKeys.has(key)) return;
       rows.push(buildLaunchRow(launchMap, {
-        id: Utilities.getUuid(), purchaseId: Utilities.getUuid(), recurringId: rule.recurringId,
+        id: Utilities.getUuid(), groupId: Utilities.getUuid(), recurringId: rule.recurringId,
         description: rule.description, value: rule.value, movementType: rule.movementType,
         category: rule.category, wallet: rule.wallet, paymentType: 'À vista',
         installmentNumber: 1, installmentCount: 1, competence,
-        purchaseDate: dateForCompetence(rule.startDate, competence), insertedAt,
+        launchDate: dateForCompetence(rule.startDate, competence), insertedAt,
       }));
       existingKeys.add(key);
     });
@@ -206,7 +206,7 @@ function processRecurring(rawCompetence) {
 
 function validateRecurring(payload, settings) {
   const description = sanitizeText(payload.descricao, 100);
-  const value = Number(payload.valor);
+  const inputValue = Number(payload.valor);
   const movementType = sanitizeText(payload.tipo, 10);
   const category = sanitizeText(payload.categoria, 60);
   const wallet = sanitizeText(payload.carteira, 60);
@@ -215,7 +215,7 @@ function validateRecurring(payload, settings) {
   const periodicity = sanitizeText(payload.periodicidade, 20);
   const status = sanitizeText(payload.status, 10);
   if (!description) throw new Error('Informe a descrição da recorrência.');
-  if (!Number.isFinite(value) || value <= 0 || value > 100000000) throw new Error('Informe um valor válido.');
+  if (!Number.isFinite(inputValue) || inputValue === 0 || Math.abs(inputValue) > 100000000) throw new Error('Informe um valor válido.');
   if (!CONFIG.MOVEMENT_TYPES.includes(movementType)) throw new Error('Tipo de movimento inválido.');
   if (!settings.categorias.includes(category)) throw new Error('Categoria inválida ou removida da configuração.');
   if (!settings.carteiras.includes(wallet)) throw new Error('Carteira inválida ou removida da configuração.');
@@ -223,6 +223,7 @@ function validateRecurring(payload, settings) {
   if (!initialCompetence) throw new Error('Informe uma competência inicial válida no formato MM/AAAA.');
   if (!CONFIG.RECURRENCE_PERIODS.includes(periodicity)) throw new Error('Periodicidade inválida.');
   if (!CONFIG.RECURRENCE_STATUSES.includes(status)) throw new Error('Status da recorrência inválido.');
+  const value = normalizeSignedValue(inputValue, movementType);
   return { description, value, movementType, category, wallet, startDate, initialCompetence, periodicity, status };
 }
 
@@ -250,13 +251,16 @@ function readRecurringRowsRaw(sheet, headerMap) {
   if (sheet.getLastRow() < 2) return [];
   return sheet.getRange(2, 1, sheet.getLastRow() - 1, headerMap.headers.length).getValues()
     .filter((row) => row[headerMap.indexes['recurringId']])
-    .map((row) => ({
+    .map((row) => {
+      const movementType = String(row[headerMap.indexes['Tipo']] || '');
+      return {
       recurringId: String(row[headerMap.indexes['recurringId']]), description: String(row[headerMap.indexes['Descrição']] || ''),
-      value: Number(row[headerMap.indexes['Valor']]), movementType: String(row[headerMap.indexes['Tipo']] || ''),
+      value: normalizeSignedValue(Number(row[headerMap.indexes['Valor']]), movementType), movementType,
       category: String(row[headerMap.indexes['Categoria']] || ''), wallet: String(row[headerMap.indexes['Carteira']] || ''),
       startDate: row[headerMap.indexes['Data de início']], initialCompetence: String(row[headerMap.indexes['Competência inicial']] || ''),
       periodicity: String(row[headerMap.indexes['Periodicidade']] || ''), status: String(row[headerMap.indexes['Status']] || ''),
-    }));
+    };
+    });
 }
 
 function findRecurringRow(sheet, headerMap, recurringId) {
@@ -274,9 +278,9 @@ function readRecurringLaunchKeys(sheet, headerMap) {
   return new Set(rows.filter((row) => row[recurringIndex] && row[competenceIndex]).map((row) => `${row[recurringIndex]}|${row[competenceIndex]}`));
 }
 
-function validatePurchase(payload, settings) {
+function validateLaunch(payload, settings) {
   const description = sanitizeText(payload.descricao, 100);
-  const value = Number(payload.valor);
+  const inputValue = Number(payload.valor);
   const movementType = sanitizeText(payload.tipo, 10);
   const category = sanitizeText(payload.categoria, 60);
   const wallet = sanitizeText(payload.carteira, 60);
@@ -284,10 +288,10 @@ function validatePurchase(payload, settings) {
   const installmentMode = sanitizeText(payload.modoParcelamento || 'valorParcela', 20);
   const installmentCount = paymentType === 'Parcelado' ? Number(payload.parcelas) : 1;
   const competence = normalizeCompetence(payload.competencia);
-  const purchaseDate = normalizeDate(payload.dataCompra);
+  const launchDate = normalizeDate(payload.dataLancamento || payload.dataCompra);
 
   if (!description) throw new Error('Informe a descrição.');
-  if (!Number.isFinite(value) || value <= 0 || value > 100000000) throw new Error('Informe um valor válido.');
+  if (!Number.isFinite(inputValue) || inputValue === 0 || Math.abs(inputValue) > 100000000) throw new Error('Informe um valor válido.');
   if (!CONFIG.MOVEMENT_TYPES.includes(movementType)) throw new Error('Tipo de movimento inválido.');
   if (!settings.categorias.includes(category)) throw new Error('Categoria inválida ou removida da configuração.');
   if (!settings.carteiras.includes(wallet)) throw new Error('Carteira inválida ou removida da configuração.');
@@ -297,30 +301,32 @@ function validatePurchase(payload, settings) {
     throw new Error(`A quantidade de parcelas deve ficar entre 1 e ${CONFIG.MAX_INSTALLMENTS}.`);
   }
   if (!competence) throw new Error('Informe uma competência válida no formato MM/AAAA.');
-  if (!purchaseDate) throw new Error('Informe uma data da compra válida.');
+  if (!launchDate) throw new Error('Informe uma data do lançamento válida.');
 
-  return { description, value, movementType, category, wallet, paymentType, installmentMode, installmentCount, competence, purchaseDate };
+  const value = normalizeSignedValue(inputValue, movementType);
+  return { description, value, movementType, category, wallet, paymentType, installmentMode, installmentCount, competence, launchDate };
 }
 
-function createInstallments(purchase) {
-  const inputCents = Math.round(purchase.value * 100);
-  const count = purchase.installmentCount;
+function createInstallments(launch) {
+  const inputCents = Math.round(Math.abs(launch.value) * 100);
+  const sign = launch.movementType === 'Saída' ? -1 : 1;
+  const count = launch.installmentCount;
   let values;
-  if (purchase.paymentType === 'Parcelado' && purchase.installmentMode === 'valorTotal') {
+  if (launch.paymentType === 'Parcelado' && launch.installmentMode === 'valorTotal') {
     const base = Math.floor(inputCents / count);
     const remainder = inputCents % count;
     values = Array.from({ length: count }, (_, index) => base + (index < remainder ? 1 : 0));
   } else {
     values = Array.from({ length: count }, () => inputCents);
   }
-  return values.map((valueCents, index) => ({ number: index + 1, valueCents, competence: addMonthsToCompetence(purchase.competence, index) }));
+  return values.map((valueCents, index) => ({ number: index + 1, valueCents: valueCents * sign, competence: addMonthsToCompetence(launch.competence, index) }));
 }
 
 function buildLaunchRow(headerMap, data) {
   const row = Array(headerMap.headers.length).fill('');
   const set = (header, value) => { if (headerMap.indexes[header] !== undefined) row[headerMap.indexes[header]] = value; };
   set('ID', data.id);
-  set('purchaseId', data.purchaseId);
+  set('groupId', data.groupId);
   set('Descrição', data.description);
   set('Valor', data.value);
   set('Tipo', data.movementType);
@@ -330,7 +336,7 @@ function buildLaunchRow(headerMap, data) {
   set('Parcela', data.installmentNumber);
   set('Total de parcelas', data.installmentCount);
   set('Competência', data.competence);
-  set('Data da compra', data.purchaseDate);
+  set('Data do lançamento', data.launchDate);
   set('Data de inserção', data.insertedAt);
   set('Origem', 'Frontend');
   set('recurringId', data.recurringId || '');
@@ -340,7 +346,9 @@ function buildLaunchRow(headerMap, data) {
 }
 
 function ensureLaunchHeaders(sheet) {
-  migrateLegacyDateColumn(sheet);
+  migrateLegacyColumn(sheet, 'Data', 'Data de inserção');
+  migrateLegacyColumn(sheet, 'Data da compra', 'Data do lançamento');
+  migrateLegacyColumn(sheet, 'purchaseId', 'groupId');
   let headers = sheet.getLastColumn() ? sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(String) : [];
   if (sheet.getLastRow() === 0 || headers.every((header) => !header)) headers = [];
   const missing = CONFIG.LAUNCH_HEADERS.filter((header) => !headers.includes(header));
@@ -351,10 +359,31 @@ function ensureLaunchHeaders(sheet) {
     sheet.autoResizeColumns(1, merged.length);
   }
   const indexes = Object.fromEntries(merged.map((header, index) => [header, index]));
+  normalizeExistingLaunchSigns(sheet, indexes);
   if (indexes['Valor'] !== undefined) sheet.getRange(2, indexes['Valor'] + 1, Math.max(1, sheet.getMaxRows() - 1), 1).setNumberFormat('R$ #,##0.00');
-  if (indexes['Data da compra'] !== undefined) sheet.getRange(2, indexes['Data da compra'] + 1, Math.max(1, sheet.getMaxRows() - 1), 1).setNumberFormat('dd/mm/yyyy');
+  if (indexes['Data do lançamento'] !== undefined) sheet.getRange(2, indexes['Data do lançamento'] + 1, Math.max(1, sheet.getMaxRows() - 1), 1).setNumberFormat('dd/mm/yyyy');
   if (indexes['Data de inserção'] !== undefined) sheet.getRange(2, indexes['Data de inserção'] + 1, Math.max(1, sheet.getMaxRows() - 1), 1).setNumberFormat('dd/mm/yyyy hh:mm');
   return { headers: merged, indexes };
+}
+
+function normalizeExistingLaunchSigns(sheet, indexes) {
+  if (sheet.getLastRow() < 2 || indexes['Valor'] === undefined || indexes['Tipo'] === undefined) return;
+  const rowCount = sheet.getLastRow() - 1;
+  const typeValues = sheet.getRange(2, indexes['Tipo'] + 1, rowCount, 1).getDisplayValues();
+  const valueRange = sheet.getRange(2, indexes['Valor'] + 1, rowCount, 1);
+  const values = valueRange.getValues();
+  let changed = false;
+  for (let index = 0; index < rowCount; index += 1) {
+    const type = String(typeValues[index][0] || '');
+    const currentValue = values[index][0];
+    if (!['Entrada', 'Saída'].includes(type) || typeof currentValue !== 'number' || !Number.isFinite(currentValue)) continue;
+    const normalized = normalizeSignedValue(currentValue, type);
+    if (normalized !== currentValue) {
+      values[index][0] = normalized;
+      changed = true;
+    }
+  }
+  if (changed) valueRange.setValues(values);
 }
 
 function ensureHeaders(sheet, requiredHeaders) {
@@ -375,16 +404,16 @@ function ensureHeaders(sheet, requiredHeaders) {
   return { headers: merged, indexes };
 }
 
-function migrateLegacyDateColumn(sheet) {
+function migrateLegacyColumn(sheet, legacyHeader, currentHeader) {
   if (sheet.getLastRow() < 1 || sheet.getLastColumn() < 1) return;
   const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(String);
-  const legacyIndex = headers.indexOf('Data');
-  const insertionIndex = headers.indexOf('Data de inserção');
+  const legacyIndex = headers.indexOf(legacyHeader);
+  const insertionIndex = headers.indexOf(currentHeader);
   if (legacyIndex < 0) return;
 
   // Se só existe a coluna antiga, renomeá-la preserva cabeçalho, dados e posição.
   if (insertionIndex < 0) {
-    sheet.getRange(1, legacyIndex + 1).setValue('Data de inserção');
+    sheet.getRange(1, legacyIndex + 1).setValue(currentHeader);
     return;
   }
 
@@ -477,6 +506,11 @@ function uniqueNonEmpty(values) {
   return [...new Set(values.map((value) => sanitizeText(value, 60)).filter(Boolean))];
 }
 
+function normalizeSignedValue(value, movementType) {
+  const absoluteValue = Math.abs(Number(value));
+  return movementType === 'Saída' ? -absoluteValue : absoluteValue;
+}
+
 function sanitizeText(value, maxLength) {
   const text = String(value || '').trim().slice(0, maxLength);
   return /^[=+\-@]/.test(text) ? `'${text}` : text;
@@ -484,7 +518,7 @@ function sanitizeText(value, maxLength) {
 
 function safeError(error) {
   const message = String(error && error.message || 'Requisição inválida.');
-  const expected = ['SPREADSHEET_ID', 'descrição', 'valor', 'movimento', 'Categoria', 'Carteira', 'pagamento', 'parcelas', 'competência', 'data da compra', 'recorrência', 'Periodicidade', 'Status', 'data de início'];
+  const expected = ['SPREADSHEET_ID', 'descrição', 'valor', 'movimento', 'Categoria', 'Carteira', 'pagamento', 'parcelas', 'competência', 'data do lançamento', 'recorrência', 'Periodicidade', 'Status', 'data de início'];
   return expected.some((term) => message.toLowerCase().includes(term.toLowerCase())) ? message : 'Não foi possível concluir a operação.';
 }
 

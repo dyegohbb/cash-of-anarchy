@@ -26,7 +26,7 @@ Novos registros usam as colunas:
 
 ```text
 ID
-purchaseId
+groupId
 Descrição
 Valor
 Tipo
@@ -36,24 +36,24 @@ Tipo de pagamento
 Parcela
 Total de parcelas
 Competência
-Data da compra
+Data do lançamento
 Data de inserção
 Origem
 ```
 
-`Data de inserção`, `ID` e `purchaseId` são gerados no backend e não aparecem como campos editáveis.
+`Data de inserção`, `ID` e `groupId` são gerados no backend e não aparecem como campos editáveis. Valores de entrada são positivos e valores de saída são negativos.
 
 ## Parcelamento
 
-- À vista: uma linha e um `purchaseId` exclusivo.
-- Parcelado: uma linha por parcela e um único `purchaseId` compartilhado.
+- À vista: uma linha e um `groupId` exclusivo.
+- Parcelado: uma linha por parcela e um único `groupId` compartilhado.
 - Valor da parcela: o valor informado é repetido em todas as parcelas.
 - Valor total: o backend divide em centavos e distribui o resto nas primeiras parcelas, garantindo soma exata.
 - A competência avança mês a mês, inclusive na troca de ano.
 
 ## Compatibilidade
 
-A migração acrescenta colunas ausentes sem descartar registros antigos. A coluna legada `Data` é consolidada em `Data de inserção`: quando apenas `Data` existe, ela é renomeada; quando ambas existem, valores ausentes são recuperados e a coluna duplicada é removida. Linhas antigas podem permanecer com `purchaseId` vazio. A coluna legada `Forma de pagamento` continua sendo preenchida quando já existir.
+A migração acrescenta colunas ausentes sem descartar registros antigos. `Data` é consolidada em `Data de inserção`, `Data da compra` em `Data do lançamento` e `purchaseId` em `groupId`. Quando as duas versões de uma coluna existem, valores ausentes são recuperados antes da remoção da duplicata. Valores antigos são normalizados pelo campo `Tipo`: `Entrada` positiva e `Saída` negativa. A coluna legada `Forma de pagamento` continua sendo preenchida quando já existir.
 
 ## Atualização do Apps Script
 

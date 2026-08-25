@@ -88,7 +88,7 @@ Para cada regra ativa e aplicável à competência:
 - ignora a regra se a combinação já existir;
 - cria um lançamento à vista se estiver ausente;
 - gera um `ID` novo;
-- gera um `purchaseId` novo para aquela ocorrência;
+- gera um `groupId` novo para aquela ocorrência;
 - mantém o `recurringId` da regra.
 
 Uma recorrência inativa permanece listada, mas não gera novos lançamentos.
@@ -99,4 +99,4 @@ Somente `Mensal` é aceita atualmente. A validação usa uma lista própria para
 
 ## Compatibilidade
 
-A coluna `recurringId` é acrescentada ao final de `Lancamentos` quando ausente. Registros manuais, compras à vista, compras parceladas e linhas antigas permanecem com o campo vazio.
+A coluna `recurringId` é acrescentada ao final de `Lancamentos` quando ausente. Lançamentos manuais, à vista, parcelados e linhas antigas permanecem com o campo vazio. Recorrências de saída geram valores negativos; recorrências de entrada geram valores positivos.
