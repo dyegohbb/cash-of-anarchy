@@ -3,9 +3,9 @@ const CONFIG = Object.freeze({
   SETTINGS_SHEET: 'Configuracoes',
   RECURRING_SHEET: 'Recorrentes',
   LAUNCH_HEADERS: [
-    'ID', 'groupId', 'Descrição', 'Valor', 'Tipo', 'Categoria', 'Carteira',
-    'Tipo de pagamento', 'Parcela', 'Total de parcelas', 'Competência',
-    'Data do lançamento', 'Data de inserção', 'Origem', 'recurringId',
+    'Competência', 'Descrição', 'Valor', 'Tipo', 'Carteira', 'Parcela',
+    'Total de parcelas', 'Data do lançamento', 'Tipo de pagamento', 'Categoria',
+    'groupId', 'ID', 'recurringId', 'Origem', 'Data de inserção',
   ],
   SETTINGS_HEADERS: ['Carteiras', 'Categorias'],
   RECURRING_HEADERS: [
@@ -355,15 +355,28 @@ function ensureLaunchHeaders(sheet) {
   const merged = headers.concat(missing);
   if (missing.length || sheet.getLastRow() === 0) {
     sheet.getRange(1, 1, 1, merged.length).setValues([merged]).setFontWeight('bold').setBackground('#b7f22f').setFontColor('#11160d');
-    sheet.setFrozenRows(1);
-    sheet.autoResizeColumns(1, merged.length);
   }
-  const indexes = Object.fromEntries(merged.map((header, index) => [header, index]));
+  const orderedHeaders = CONFIG.LAUNCH_HEADERS.concat(merged.filter((header) => !CONFIG.LAUNCH_HEADERS.includes(header)));
+  const ordered = reorderSheetColumns(sheet, merged, orderedHeaders);
+  sheet.setFrozenRows(1);
+  sheet.autoResizeColumns(1, ordered.length);
+  const indexes = Object.fromEntries(ordered.map((header, index) => [header, index]));
   normalizeExistingLaunchSigns(sheet, indexes);
   if (indexes['Valor'] !== undefined) sheet.getRange(2, indexes['Valor'] + 1, Math.max(1, sheet.getMaxRows() - 1), 1).setNumberFormat('R$ #,##0.00');
   if (indexes['Data do lançamento'] !== undefined) sheet.getRange(2, indexes['Data do lançamento'] + 1, Math.max(1, sheet.getMaxRows() - 1), 1).setNumberFormat('dd/mm/yyyy');
   if (indexes['Data de inserção'] !== undefined) sheet.getRange(2, indexes['Data de inserção'] + 1, Math.max(1, sheet.getMaxRows() - 1), 1).setNumberFormat('dd/mm/yyyy hh:mm');
-  return { headers: merged, indexes };
+  return { headers: ordered, indexes };
+}
+
+function reorderSheetColumns(sheet, currentHeaders, orderedHeaders) {
+  if (currentHeaders.join('\u0000') === orderedHeaders.join('\u0000')) return currentHeaders;
+  const lastRow = Math.max(1, sheet.getLastRow());
+  const values = sheet.getRange(1, 1, lastRow, currentHeaders.length).getValues();
+  const currentIndexes = Object.fromEntries(currentHeaders.map((header, index) => [header, index]));
+  const reorderedValues = values.map((row) => orderedHeaders.map((header) => row[currentIndexes[header]]));
+  sheet.getRange(1, 1, lastRow, orderedHeaders.length).setValues(reorderedValues);
+  sheet.getRange(1, 1, 1, orderedHeaders.length).setFontWeight('bold').setBackground('#b7f22f').setFontColor('#11160d');
+  return orderedHeaders;
 }
 
 function normalizeExistingLaunchSigns(sheet, indexes) {
