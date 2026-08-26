@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
-import { callApi, clearAuthToken, getAuthToken, isApiConfigured, setAuthToken } from './api.js'
+import { callApi, clearAuthToken, consumeAuthError, getAuthToken, isApiConfigured, setAuthToken } from './api.js'
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID?.trim() || ''
 const USER_KEY = 'cash-of-anarchy:google-user'
+let googleIdentityInitialized = false
+let googleCredentialCallback = null
 
 function localDateValue() {
   const now = new Date()
@@ -62,7 +64,7 @@ function formatCompetenceLabel(value) {
 }
 
 function AccessGate({ onAccess }) {
-  const [message, setMessage] = useState('')
+  const [message, setMessage] = useState(consumeAuthError)
   const [loading, setLoading] = useState(false)
   const [googleReady, setGoogleReady] = useState(false)
 
@@ -71,22 +73,27 @@ function AccessGate({ onAccess }) {
     let active = true
     const initializeGoogle = () => {
       if (!active || !window.google?.accounts?.id) return
-      window.google.accounts.id.initialize({
-        client_id: GOOGLE_CLIENT_ID,
-        callback: async ({ credential }) => {
-          setLoading(true); setMessage('')
-          try {
-            setAuthToken(credential)
-            const authentication = await callApi({ action: 'autenticarGoogle' }, credential)
-            const initialization = await callApi({ action: 'inicializar' }, credential)
-            onAccess({ ...initialization, usuario: authentication.usuario })
-          } catch (error) {
-            clearAuthToken(); setMessage(error.message)
-          } finally { setLoading(false) }
-        },
-        auto_select: false,
-        cancel_on_tap_outside: true,
-      })
+      googleCredentialCallback = async ({ credential }) => {
+        if (!active) return
+        setLoading(true); setMessage('')
+        try {
+          setAuthToken(credential)
+          const authentication = await callApi({ action: 'autenticarGoogle' }, credential)
+          const initialization = await callApi({ action: 'inicializar' }, credential)
+          onAccess({ ...initialization, usuario: authentication.usuario })
+        } catch (error) {
+          clearAuthToken(); setMessage(error.message)
+        } finally { if (active) setLoading(false) }
+      }
+      if (!googleIdentityInitialized) {
+        window.google.accounts.id.initialize({
+          client_id: GOOGLE_CLIENT_ID,
+          callback: (response) => googleCredentialCallback?.(response),
+          auto_select: false,
+          cancel_on_tap_outside: true,
+        })
+        googleIdentityInitialized = true
+      }
       const container = document.getElementById('googleSignInButton')
       if (container) {
         container.innerHTML = ''
