@@ -136,6 +136,13 @@ input:focus, select:focus { border-color: #b7f22f; box-shadow: 0 0 0 3px #b7f22f
 .recurringHero { display: grid; gap: 24px; padding: 38px 0 26px; }
 .recurringHero h2 { font-size: clamp(46px, 14.5vw, 66px); }
 .newRecurring { align-self: end; }
+.recurringProcessor { display: grid; gap: 18px; margin-bottom: 18px; padding: 20px 17px; border: 1px solid #3b443d; border-top: 3px solid #b7f22f; background: #141815; }
+.recurringProcessor .kicker { margin-bottom: 8px; }
+.recurringProcessor h3 { font-size: 19px; }
+.recurringProcessor > div > p:last-child { margin: 8px 0 0; color: #879187; font-size: 12px; line-height: 1.45; }
+.recurringProcessorActions { display: grid; gap: 10px; }
+.dangerButton { min-height: 52px; width: 100%; padding: 0 16px; border: 1px solid #a64d48; border-radius: 7px; background: #261817; color: #ff8a83; font-weight: 700; }
+.dangerButton:active { background: #351c1a; transform: scale(.99); }
 .recurringList { display: grid; gap: 14px; }
 .emptyState { min-height: 180px; display: grid; place-content: center; gap: 8px; padding: 30px; border: 1px dashed #3b443d; color: #7f897f; text-align: center; }
 .emptyState strong { color: #e4e9e1; }
@@ -197,6 +204,7 @@ footer p { display: none; margin: 0; }
   .settingsStrip { grid-template-columns: 180px 180px 1fr; }
   .settingsStrip p { grid-column: auto; display: flex; align-items: center; }
   .recurringHero { grid-template-columns: 1fr 280px; align-items: end; padding: 58px 0 36px; }
+  .recurringProcessor { grid-template-columns: 1.2fr .7fr 1fr; align-items: end; padding: 24px; }
   .recurringList { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .recurringFormPanel { margin-top: 10px; }
   .accessCard { width: min(500px, 100%); padding: 46px; }

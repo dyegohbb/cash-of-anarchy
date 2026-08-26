@@ -127,6 +127,7 @@ function RecurringScreen({ settings, onBack }) {
   const [items, setItems] = useState([])
   const [mode, setMode] = useState('list')
   const [form, setForm] = useState(emptyForm)
+  const [processingCompetence, setProcessingCompetence] = useState(localMonthValue)
   const [loading, setLoading] = useState('listar')
   const [message, setMessage] = useState({ kind: '', text: '' })
 
@@ -168,11 +169,37 @@ function RecurringScreen({ settings, onBack }) {
     finally { setLoading('') }
   }
 
+  async function processCompetence() {
+    setLoading('processar'); setMessage({ kind: '', text: '' })
+    try {
+      const result = await callApi({ action: 'processarRecorrentes', competencia: toCompetence(processingCompetence) })
+      setMessage({ kind: 'success', text: result.message })
+    } catch (error) { setMessage({ kind: 'error', text: error.message }) }
+    finally { setLoading('') }
+  }
+
+  async function removeCompetence() {
+    const competence = toCompetence(processingCompetence)
+    if (!window.confirm(`Remover os lançamentos recorrentes de ${competence}? As regras continuarão cadastradas.`)) return
+    setLoading('remover'); setMessage({ kind: '', text: '' })
+    try {
+      const result = await callApi({ action: 'removerLancamentosRecorrentes', competencia: competence })
+      setMessage({ kind: 'success', text: result.message })
+    } catch (error) { setMessage({ kind: 'error', text: error.message }) }
+    finally { setLoading('') }
+  }
+
   return <main className="shell">
     <header className="brand"><button className="backButton" onClick={onBack} aria-label="Voltar para novo lançamento">←</button><div><p className="eyebrow">GERENCIAMENTO</p><h1>Lançamentos recorrentes</h1></div></header>
     <section className="recurringHero"><div><p className="kicker">RECORRÊNCIAS</p><h2>Todo mês.<br /><em>Sem esquecer.</em></h2></div>
       {mode === 'list' && <button className="submitButton newRecurring" onClick={openNew}>Nova recorrência <span>＋</span></button>}
     </section>
+
+    {mode === 'list' && <section className="recurringProcessor">
+      <div><p className="kicker">GERAR LANÇAMENTOS</p><h3>Processar uma competência</h3><p>Cria ou remove somente os lançamentos recorrentes do mês escolhido.</p></div>
+      <label>Competência<input required type="month" value={processingCompetence} disabled={Boolean(loading)} onChange={(event) => setProcessingCompetence(event.target.value)} /><small className="fieldHint">Referência: {competenceReference(processingCompetence)}</small></label>
+      <div className="recurringProcessorActions"><button className="submitButton" disabled={Boolean(loading) || !processingCompetence} onClick={processCompetence}>{loading === 'processar' ? 'Processando…' : 'Processar mês'} <span>→</span></button><button className="dangerButton" disabled={Boolean(loading) || !processingCompetence} onClick={removeCompetence}>{loading === 'remover' ? 'Removendo…' : 'Remover lançamentos do mês'}</button></div>
+    </section>}
 
     {mode === 'list' ? <section className="recurringList" aria-busy={loading === 'listar'}>
       {loading === 'listar' && <div className="emptyState">Carregando recorrências…</div>}

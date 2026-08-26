@@ -37,6 +37,7 @@ function doPost(event) {
     if (payload.action === 'adicionarRecorrente') return addRecurring(payload);
     if (payload.action === 'atualizarRecorrente') return updateRecurring(payload);
     if (payload.action === 'processarRecorrentes') return processRecurring(payload.competencia);
+    if (payload.action === 'removerLancamentosRecorrentes') return removeRecurringLaunches(payload.competencia);
     return jsonResponse({ ok: false, error: 'Ação não permitida.' });
   } catch (error) {
     console.error(error);
@@ -202,6 +203,39 @@ function processRecurring(rawCompetence) {
     lock.releaseLock();
   }
   return jsonResponse({ ok: true, competencia: competence, lancamentosCriados: generated, message: `${generated} lançamento(s) recorrente(s) criado(s).` });
+}
+
+function removeRecurringLaunches(rawCompetence) {
+  const competence = normalizeCompetence(rawCompetence);
+  if (!competence) throw new Error('Informe uma competência válida no formato MM/AAAA.');
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  let removed = 0;
+  try {
+    const sheet = getOrCreateSheet(getSpreadsheet(), CONFIG.LAUNCHES_SHEET);
+    const headerMap = ensureLaunchHeaders(sheet);
+    if (sheet.getLastRow() < 2) return jsonResponse({ ok: true, competencia: competence, lancamentosRemovidos: 0, message: 'Nenhum lançamento recorrente encontrado nessa competência.' });
+
+    const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, headerMap.headers.length).getValues();
+    const competenceIndex = headerMap.indexes['Competência'];
+    const recurringIndex = headerMap.indexes['recurringId'];
+    const rowsToDelete = [];
+    rows.forEach((row, index) => {
+      if (String(row[competenceIndex]) === competence && String(row[recurringIndex]).trim()) rowsToDelete.push(index + 2);
+    });
+    rowsToDelete.reverse().forEach((rowNumber) => sheet.deleteRow(rowNumber));
+    removed = rowsToDelete.length;
+  } finally {
+    lock.releaseLock();
+  }
+
+  return jsonResponse({
+    ok: true,
+    competencia: competence,
+    lancamentosRemovidos: removed,
+    message: removed ? `${removed} lançamento(s) recorrente(s) removido(s).` : 'Nenhum lançamento recorrente encontrado nessa competência.',
+  });
 }
 
 function validateRecurring(payload, settings) {
