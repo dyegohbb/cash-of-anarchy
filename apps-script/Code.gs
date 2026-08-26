@@ -27,6 +27,15 @@ function doGet() {
   return jsonResponse({ ok: true, message: 'Cash Of Anarchy API online.' });
 }
 
+// Execute uma vez pelo editor após instalar ou alterar os escopos do manifesto.
+// O Apps Script exibirá a tela de consentimento do proprietário da implantação.
+function authorizeApplication() {
+  const spreadsheet = getSpreadsheet();
+  spreadsheet.getName();
+  const response = UrlFetchApp.fetch('https://oauth2.googleapis.com/tokeninfo?id_token=authorization-check', { muteHttpExceptions: true });
+  return `Permissões concedidas. Verificação externa respondeu com HTTP ${response.getResponseCode()}.`;
+}
+
 function doPost(event) {
   try {
     const payload = JSON.parse(event.postData.contents || '{}');

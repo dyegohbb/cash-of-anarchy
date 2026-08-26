@@ -57,14 +57,16 @@ Não crie nem coloque um Client Secret no frontend. Este fluxo usa apenas o Clie
 1. Crie uma planilha no Google Sheets e copie o ID da URL (o texto entre `/d/` e `/edit`).
 2. Na planilha, abra **Extensões → Apps Script**.
 3. Copie o conteúdo de `apps-script/Code.gs` para o editor e salve.
+   Copie também `apps-script/appsscript.json` para o manifesto do projeto. Em **Configurações do projeto**, ative **Mostrar o arquivo de manifesto appsscript.json no editor** para conseguir editá-lo.
 4. Em **Configurações do projeto → Propriedades do script**, crie:
    - `SPREADSHEET_ID`: ID da planilha;
    - `GOOGLE_CLIENT_ID`: o mesmo Client ID configurado no frontend;
    - `ALLOWED_GOOGLE_EMAILS`: seu e-mail Google autorizado.
-5. Clique em **Implantar → Nova implantação → Aplicativo da Web**.
-6. Execute como **você** e escolha **Qualquer pessoa** em quem pode acessar. O endpoint precisa receber o `fetch` do GitHub Pages; cada ação continuará bloqueada até o Apps Script validar o token Google e o e-mail permitido.
-7. Copie a URL terminada em `/exec`, crie `.env` a partir de `.env.example` e preencha `VITE_APPS_SCRIPT_URL`.
-8. Reinicie o frontend e entre com a conta Google autorizada. A aplicação inicializará automaticamente as abas `Lancamentos`, `Configuracoes` e `Recorrentes`.
+5. No editor, selecione a função `authorizeApplication` e clique em **Executar**. Entre com a conta proprietária, avance pela tela de autorização e conceda acesso à planilha e a conexões externas. Essa etapa é necessária uma vez sempre que os escopos forem alterados.
+6. Clique em **Implantar → Nova implantação → Aplicativo da Web**.
+7. Execute como **você** e escolha **Qualquer pessoa** em quem pode acessar. O endpoint precisa receber o `fetch` do GitHub Pages; cada ação continuará bloqueada até o Apps Script validar o token Google e o e-mail permitido.
+8. Copie a URL terminada em `/exec`, crie `.env` a partir de `.env.example` e preencha `VITE_APPS_SCRIPT_URL`.
+9. Reinicie o frontend e entre com a conta Google autorizada. A aplicação inicializará automaticamente as abas `Lancamentos`, `Configuracoes` e `Recorrentes`.
 
 ### Aba Configuracoes
 
