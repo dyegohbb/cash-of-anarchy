@@ -227,6 +227,16 @@ input:focus, select:focus { border-color: #b7f22f; box-shadow: 0 0 0 3px #b7f22f
 .futureTable article strong { margin-top: 4px; font-size: 13px; overflow-wrap: anywhere; }
 .futureTable article small { margin-top: 4px; color: #6f7970; font-size: 9px; overflow-wrap: anywhere; }
 .futureTable article > b { flex: 0 0 auto; font-size: 14px; }
+.extractFilters { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 18px; padding-bottom: 18px; border-bottom: 1px solid #2b312c; }
+.extractFilters label { min-width: 0; color: #7f897f; font: 500 9px DM Mono; letter-spacing: .08em; text-transform: uppercase; }
+.extractFilters label:first-child { grid-column: 1 / -1; }
+.extractFilters input, .extractFilters select { width: 100%; min-height: 48px; margin-top: 7px; padding: 0 11px; border: 1px solid #384039; border-radius: 6px; background-color: #101411; color: #e8ede5; font: 400 16px Inter, sans-serif; letter-spacing: normal; text-transform: none; }
+.listTotal { margin-top: 6px; padding: 15px 0 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 2px solid #3a443b; }
+.listTotal span { color: #98a298 !important; font: 500 9px DM Mono !important; letter-spacing: .08em; text-transform: uppercase; }
+.listTotal strong { flex: 0 0 auto; font-size: 15px !important; }
+.walletTotal { grid-column: 1 / -1; display: flex !important; align-items: center; justify-content: space-between; gap: 12px; border-top: 2px solid #3a443b !important; background: #171c18 !important; }
+.walletTotal span { min-height: 0; }
+.walletTotal strong { margin-top: 0; }
 .dashboardEmpty { min-height: 100px; display: grid; place-items: center; color: #778178; font-size: 12px; text-align: center; }
 
 .accessPage {

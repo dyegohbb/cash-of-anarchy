@@ -240,6 +240,7 @@ function DashboardScreen({ user, onNavigate, onSettingsUpdate, onSignOut }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState('dashboard')
   const [message, setMessage] = useState({ kind: '', text: '' })
+  const [extractFilters, setExtractFilters] = useState({ description: '', category: '', wallet: '' })
 
   async function loadDashboard(selectedCompetence = competence, clearMessage = true) {
     setLoading('dashboard'); if (clearMessage) setMessage({ kind: '', text: '' })
@@ -250,7 +251,10 @@ function DashboardScreen({ user, onNavigate, onSettingsUpdate, onSignOut }) {
     finally { setLoading('') }
   }
 
-  useEffect(() => { loadDashboard(competence) }, [competence])
+  useEffect(() => {
+    setExtractFilters({ description: '', category: '', wallet: '' })
+    loadDashboard(competence)
+  }, [competence])
 
   async function syncSpreadsheet() {
     setLoading('planilha'); setMessage({ kind: '', text: '' })
@@ -275,6 +279,20 @@ function DashboardScreen({ user, onNavigate, onSettingsUpdate, onSignOut }) {
   const summary = data?.resumo || { income: 0, expenses: 0, balance: 0, count: 0 }
   const categories = data?.categorias || []
   const biggestCategory = Math.max(1, ...categories.map((item) => item.expenses))
+  const launches = data?.lancamentos || []
+  const installmentPayments = launches.filter((item) => item.installmentCount > 1)
+  const availableCategories = [...new Set(launches.map((item) => item.category).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'))
+  const availableWallets = [...new Set(launches.map((item) => item.wallet).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'))
+  const normalizedDescription = extractFilters.description.trim().toLocaleLowerCase('pt-BR')
+  const filteredLaunches = launches.filter((item) => (
+    (!normalizedDescription || item.description.toLocaleLowerCase('pt-BR').includes(normalizedDescription))
+    && (!extractFilters.category || item.category === extractFilters.category)
+    && (!extractFilters.wallet || item.wallet === extractFilters.wallet)
+  ))
+  const installmentTotal = installmentPayments.reduce((total, item) => total + item.value, 0)
+  const extractTotal = filteredLaunches.reduce((total, item) => total + item.value, 0)
+  const categoryTotal = categories.reduce((total, item) => total + item.expenses, 0)
+  const walletTotal = (data?.carteiras || []).reduce((total, item) => total + item.balance, 0)
 
   return <main className="shell dashboardShell">
     <header className="brand dashboardBrand"><span className="brandMark" aria-hidden="true">C$</span><div><p className="eyebrow">CENTRAL FINANCEIRA</p><h1>Cash Of Anarchy</h1></div><button className="accountButton" onClick={onSignOut} aria-label={`Sair da conta ${user.email}`}><span>{user.email}</span><strong>Sair</strong></button></header>
@@ -301,12 +319,18 @@ function DashboardScreen({ user, onNavigate, onSettingsUpdate, onSignOut }) {
         <div className="monthTimeline">{(data?.planejamento || []).length ? data.planejamento.map((month) => <article key={month.competence} className={month.balance < 0 ? 'monthNegative' : ''}><span>{formatCompetenceLabel(month.competence)}</span><strong>{formatMoney(month.expenses)}</strong><small>Saídas</small><div><i style={{ width: `${Math.min(100, month.income ? (month.expenses / month.income) * 100 : 100)}%` }} /></div><p className={month.balance < 0 ? 'negativeText' : 'positiveText'}>Saldo {formatMoney(month.balance)}</p></article>) : <div className="dashboardEmpty">Nenhum lançamento futuro encontrado.</div>}</div>
       </section>
 
-      <div className="dashboardColumns"><section className="dashboardSection"><div className="sectionTitle"><div><span>MICRO</span><h3>Para onde vai</h3></div><p>Saídas do mês por categoria.</p></div><div className="breakdownList">{categories.length ? categories.map((item) => <div key={item.name}><div><span>{item.name}</span><strong>{formatMoney(item.expenses)}</strong></div><i><b style={{ width: `${(item.expenses / biggestCategory) * 100}%` }} /></i></div>) : <div className="dashboardEmpty">Sem despesas nesta competência.</div>}</div></section>
-        <section className="dashboardSection"><div className="sectionTitle"><div><span>CARTEIRAS</span><h3>Impacto por conta</h3></div><p>Movimento líquido no mês.</p></div><div className="walletList">{(data?.carteiras || []).length ? data.carteiras.map((item) => <div key={item.name}><span>{item.name}</span><strong className={item.balance < 0 ? 'negativeText' : 'positiveText'}>{formatMoney(item.balance)}</strong><small>{formatMoney(item.expenses)} em saídas</small></div>) : <div className="dashboardEmpty">Sem movimentação por carteira.</div>}</div></section></div>
+      <div className="dashboardColumns"><section className="dashboardSection"><div className="sectionTitle"><div><span>MICRO</span><h3>Para onde vai</h3></div><p>Saídas do mês por categoria.</p></div><div className="breakdownList">{categories.length ? <>{categories.map((item) => <div key={item.name}><div><span>{item.name}</span><strong>{formatMoney(item.expenses)}</strong></div><i><b style={{ width: `${(item.expenses / biggestCategory) * 100}%` }} /></i></div>)}<div className="listTotal"><span>Total das saídas</span><strong className="negativeText">{formatMoney(categoryTotal)}</strong></div></> : <div className="dashboardEmpty">Sem despesas nesta competência.</div>}</div></section>
+        <section className="dashboardSection"><div className="sectionTitle"><div><span>CARTEIRAS</span><h3>Impacto por conta</h3></div><p>Movimento líquido no mês.</p></div><div className="walletList">{(data?.carteiras || []).length ? <>{data.carteiras.map((item) => <div key={item.name}><span>{item.name}</span><strong className={item.balance < 0 ? 'negativeText' : 'positiveText'}>{formatMoney(item.balance)}</strong><small>{formatMoney(item.expenses)} em saídas</small></div>)}<div className="walletTotal"><span>Total líquido</span><strong className={walletTotal < 0 ? 'negativeText' : 'positiveText'}>{formatMoney(walletTotal)}</strong></div></> : <div className="dashboardEmpty">Sem movimentação por carteira.</div>}</div></section></div>
 
-      <section className="dashboardSection"><div className="sectionTitle"><div><span>PLANEJAMENTO</span><h3>Próximas dívidas</h3></div><p>Parcelas e recorrências já conhecidas.</p></div><div className="futureTable">{(data?.dividasFuturas || []).length ? data.dividasFuturas.slice(0, 12).map((item) => <article key={`${item.id}-${item.competence}`}><div><span>{formatCompetenceLabel(item.competence)}</span><strong>{item.description}</strong><small>{item.wallet} · {item.category}{item.installmentCount > 1 ? ` · ${item.installment}/${item.installmentCount}` : ''}</small></div><b className="negativeText">{formatMoney(item.value)}</b></article>) : <div className="dashboardEmpty">Nenhuma dívida futura cadastrada.</div>}</div></section>
+      <section className="dashboardSection"><div className="sectionTitle"><div><span>PARCELAS DO MÊS</span><h3>Pagamentos parcelados</h3></div><p>Parcela atual e valor total da compra.</p></div><div className="futureTable installmentTable">{installmentPayments.length ? <>{installmentPayments.map((item) => <article key={item.id || `${item.groupId}-${item.installment}`}><div><span>{item.category}</span><strong>{item.description}</strong><small>{item.wallet} · Parcela {item.installment}/{item.installmentCount} · Compra total: {formatMoney(item.purchaseTotal)}</small></div><b className={item.value < 0 ? 'negativeText' : 'positiveText'}>{formatMoney(item.value)}</b></article>)}<div className="listTotal"><span>Somatório das parcelas do mês</span><strong className={installmentTotal < 0 ? 'negativeText' : 'positiveText'}>{formatMoney(installmentTotal)}</strong></div></> : <div className="dashboardEmpty">Nenhum pagamento parcelado nesta competência.</div>}</div></section>
 
-      <section className="dashboardSection"><div className="sectionTitle"><div><span>{formatCompetenceLabel(toCompetence(competence)).toUpperCase()}</span><h3>Lançamentos do mês</h3></div><p>Do maior impacto para o menor.</p></div><div className="futureTable currentLaunches">{(data?.lancamentos || []).length ? data.lancamentos.map((item) => <article key={item.id || `${item.description}-${item.value}`}><div><span>{item.category}</span><strong>{item.description}</strong><small>{item.wallet}{item.installmentCount > 1 ? ` · Parcela ${item.installment}/${item.installmentCount}` : ''}</small></div><b className={item.value < 0 ? 'negativeText' : 'positiveText'}>{formatMoney(item.value)}</b></article>) : <div className="dashboardEmpty">Nenhum lançamento nesta competência.</div>}</div></section>
+      <section className="dashboardSection"><div className="sectionTitle"><div><span>{formatCompetenceLabel(toCompetence(competence)).toUpperCase()}</span><h3>Extrato do mês</h3></div><p>Tudo que entrou e saiu de todas as contas.</p></div>
+        <div className="extractFilters">
+          <label>Descrição<input type="search" inputMode="search" placeholder="Buscar parte da descrição" value={extractFilters.description} onChange={(event) => setExtractFilters((current) => ({ ...current, description: event.target.value }))} /></label>
+          <label>Categoria<select value={extractFilters.category} onChange={(event) => setExtractFilters((current) => ({ ...current, category: event.target.value }))}><option value="">Todas</option>{availableCategories.map((category) => <option key={category} value={category}>{category}</option>)}</select></label>
+          <label>Carteira<select value={extractFilters.wallet} onChange={(event) => setExtractFilters((current) => ({ ...current, wallet: event.target.value }))}><option value="">Todas</option>{availableWallets.map((wallet) => <option key={wallet} value={wallet}>{wallet}</option>)}</select></label>
+        </div>
+        <div className="futureTable currentLaunches">{filteredLaunches.length ? <>{filteredLaunches.map((item) => <article key={item.id || `${item.description}-${item.value}`}><div><span>{item.category}</span><strong>{item.description}</strong><small>{item.wallet}{item.installmentCount > 1 ? ` · Parcela ${item.installment}/${item.installmentCount}` : ''}</small></div><b className={item.value < 0 ? 'negativeText' : 'positiveText'}>{formatMoney(item.value)}</b></article>)}<div className="listTotal"><span>Total do extrato filtrado · {filteredLaunches.length} registro(s)</span><strong className={extractTotal < 0 ? 'negativeText' : 'positiveText'}>{formatMoney(extractTotal)}</strong></div></> : <div className="dashboardEmpty">Nenhum lançamento encontrado com esses filtros.</div>}</div></section>
     </>}
     <footer><span>DASHBOARD FINANCEIRO</span><p>Dados lidos diretamente do Google Sheets.</p><span>V0.6</span></footer>
   </main>

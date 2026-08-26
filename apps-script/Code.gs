@@ -185,6 +185,15 @@ function getDashboardResponse(rawCompetence) {
   const sheet = getOrCreateSheet(getSpreadsheet(), CONFIG.LAUNCHES_SHEET);
   const headerMap = ensureLaunchHeaders(sheet);
   const launches = readDashboardLaunches(sheet, headerMap);
+  const purchaseTotals = launches.reduce((totals, item) => {
+    if (item.groupId && item.installmentCount > 1) totals[item.groupId] = (totals[item.groupId] || 0) + Math.abs(item.value);
+    return totals;
+  }, {});
+  launches.forEach((item) => {
+    item.purchaseTotal = item.groupId && purchaseTotals[item.groupId]
+      ? purchaseTotals[item.groupId]
+      : Math.abs(item.value) * item.installmentCount;
+  });
   const selected = launches.filter((item) => item.competence === competence);
   const future = launches.filter((item) => compareCompetences(item.competence, competence) >= 0);
   const monthGroups = {};
@@ -210,7 +219,7 @@ function getDashboardResponse(rawCompetence) {
     planejamento: planning,
     categorias: categories,
     carteiras: wallets,
-    lancamentos: selected.sort((left, right) => Math.abs(right.value) - Math.abs(left.value)).slice(0, 100),
+    lancamentos: selected.sort((left, right) => Math.abs(right.value) - Math.abs(left.value)),
     dividasFuturas: upcomingDebts,
     totalDividasFuturas: future.filter((item) => item.value < 0).reduce((total, item) => total + Math.abs(item.value), 0),
   });
