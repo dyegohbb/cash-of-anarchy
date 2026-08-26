@@ -18,6 +18,8 @@ MVP gratuito para registrar entradas e saídas em uma planilha Google por uma in
 - entradas armazenadas como valores positivos e saídas como valores negativos;
 - gerenciamento de recorrências mensais com criação, listagem, edição e status;
 - geração incremental protegida pela combinação `recurringId + competência`.
+- dashboard inicial por competência com entradas, saídas, saldo, dívidas futuras, categorias, carteiras e planejamento de até 18 competências;
+- atalhos no dashboard para novo lançamento, recorrências, sincronização da planilha e sincronização das configurações.
 
 ## Rodar o frontend
 
@@ -58,7 +60,7 @@ A aplicação cria duas colunas:
 Carteiras | Categorias
 ```
 
-Edite as linhas dessa aba para controlar as opções do formulário. Depois, use **Atualizar configurações** no frontend. Carteiras e categorias não ficam hardcoded no navegador.
+Edite as linhas dessa aba para controlar as opções do formulário. Depois, use **Sync configuração** no dashboard. Carteiras e categorias não ficam hardcoded no navegador.
 
 ### Aba Lancamentos
 
@@ -94,6 +96,6 @@ O endereço padrão será `https://SEU_USUARIO.github.io/cash-of-anarchy/`.
 1. Validar o fluxo frontend → Apps Script → Sheets.
 2. Adicionar autenticação antes de expor dados reais.
 3. Criar o webhook e os comandos do Telegram no mesmo Apps Script.
-4. Só depois adicionar listagem, edição, exclusão e dashboard.
+4. Evoluir o dashboard com edição e exclusão de lançamentos.
 
 Não coloque token do Telegram, ID secreto ou credenciais em arquivos `VITE_*`: essas variáveis são públicas no navegador.

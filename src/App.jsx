@@ -52,6 +52,13 @@ function formatMoney(value) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Math.abs(Number(value) || 0))
 }
 
+function formatCompetenceLabel(value) {
+  const [month, year] = String(value || '').split('/')
+  if (!month || !year) return value || '—'
+  const label = new Intl.DateTimeFormat('pt-BR', { month: 'short', year: 'numeric' }).format(new Date(Number(year), Number(month) - 1, 1))
+  return label.replace('.', '')
+}
+
 function AccessGate({ onAccess }) {
   const [password, setPassword] = useState('')
   const [attempts, setAttempts] = useState(() => Number(localStorage.getItem(ATTEMPTS_KEY) || 0))
@@ -230,6 +237,83 @@ function RecurringScreen({ settings, onBack }) {
   </main>
 }
 
+function DashboardScreen({ onNavigate, onSettingsUpdate }) {
+  const [competence, setCompetence] = useState(localMonthValue)
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState('dashboard')
+  const [message, setMessage] = useState({ kind: '', text: '' })
+
+  async function loadDashboard(selectedCompetence = competence, clearMessage = true) {
+    setLoading('dashboard'); if (clearMessage) setMessage({ kind: '', text: '' })
+    try {
+      const result = await callApi({ action: 'obterDashboard', competencia: toCompetence(selectedCompetence) })
+      setData(result)
+    } catch (error) { setMessage({ kind: 'error', text: error.message }) }
+    finally { setLoading('') }
+  }
+
+  useEffect(() => { loadDashboard(competence) }, [competence])
+
+  async function syncSpreadsheet() {
+    setLoading('planilha'); setMessage({ kind: '', text: '' })
+    try {
+      const result = await callApi({ action: 'inicializar' })
+      onSettingsUpdate(result.configuracoes || { carteiras: [], categorias: [] })
+      await loadDashboard(competence, false)
+      setMessage({ kind: 'success', text: 'Planilha sincronizada e estrutura conferida.' })
+    } catch (error) { setMessage({ kind: 'error', text: error.message }); setLoading('') }
+  }
+
+  async function syncSettings() {
+    setLoading('configuracoes'); setMessage({ kind: '', text: '' })
+    try {
+      const result = await callApi({ action: 'obterConfiguracoes' })
+      onSettingsUpdate(result.configuracoes || { carteiras: [], categorias: [] })
+      setMessage({ kind: 'success', text: 'Carteiras e categorias sincronizadas.' })
+    } catch (error) { setMessage({ kind: 'error', text: error.message }) }
+    finally { setLoading('') }
+  }
+
+  const summary = data?.resumo || { income: 0, expenses: 0, balance: 0, count: 0 }
+  const categories = data?.categorias || []
+  const biggestCategory = Math.max(1, ...categories.map((item) => item.expenses))
+
+  return <main className="shell dashboardShell">
+    <header className="brand dashboardBrand"><span className="brandMark" aria-hidden="true">C$</span><div><p className="eyebrow">CENTRAL FINANCEIRA</p><h1>Cash Of Anarchy</h1></div><span className="connection online"><i /> Sheets conectado</span></header>
+
+    <section className="dashboardIntro"><div><p className="kicker">VISÃO GERAL</p><h2>Seu dinheiro.<br /><em>Sem neblina.</em></h2></div><label className="dashboardMonth">Mês analisado<input type="month" value={competence} onChange={(event) => setCompetence(event.target.value)} /></label></section>
+
+    <nav className="dashboardActions" aria-label="Ações principais">
+      <button className="primaryAction" onClick={() => onNavigate('launch')}><span>＋</span><strong>Novo lançamento</strong><small>Entrada, saída ou parcela</small></button>
+      <button onClick={() => onNavigate('recurring')}><span>↻</span><strong>Recorrências</strong><small>Regras e processamento mensal</small></button>
+      <button disabled={Boolean(loading)} onClick={syncSpreadsheet}><span>⇅</span><strong>{loading === 'planilha' ? 'Sincronizando…' : 'Sync planilha'}</strong><small>Estrutura e lançamentos</small></button>
+      <button disabled={Boolean(loading)} onClick={syncSettings}><span>⚙</span><strong>{loading === 'configuracoes' ? 'Sincronizando…' : 'Sync configuração'}</strong><small>Carteiras e categorias</small></button>
+    </nav>
+
+    {message.text && <div className={`notice dashboardNotice ${message.kind}`} role="status">{message.text}</div>}
+    {loading === 'dashboard' && !data ? <section className="dashboardLoading">Lendo sua planilha…</section> : <>
+      <section className="metricGrid">
+        <article className="metricCard"><span>ENTRADAS</span><strong className="positiveText">{formatMoney(summary.income)}</strong><small>{summary.count} lançamentos no mês</small></article>
+        <article className="metricCard"><span>SAÍDAS</span><strong className="negativeText">{formatMoney(summary.expenses)}</strong><small>{summary.income ? Math.round((summary.expenses / summary.income) * 100) : 0}% das entradas</small></article>
+        <article className={`metricCard balanceCard ${summary.balance < 0 ? 'negative' : ''}`}><span>SALDO PROJETADO</span><strong>{formatMoney(summary.balance)}</strong><small>{summary.balance < 0 ? 'Mês fecha no vermelho' : 'Margem disponível no mês'}</small></article>
+        <article className="metricCard"><span>DÍVIDAS FUTURAS</span><strong>{formatMoney(data?.totalDividasFuturas)}</strong><small>A partir de {formatCompetenceLabel(toCompetence(competence))}</small></article>
+      </section>
+
+      <section className="dashboardSection"><div className="sectionTitle"><div><span>MACRO</span><h3>Horizonte financeiro</h3></div><p>Entradas, saídas e saldo por competência.</p></div>
+        <div className="monthTimeline">{(data?.planejamento || []).length ? data.planejamento.map((month) => <article key={month.competence} className={month.balance < 0 ? 'monthNegative' : ''}><span>{formatCompetenceLabel(month.competence)}</span><strong>{formatMoney(month.expenses)}</strong><small>Saídas</small><div><i style={{ width: `${Math.min(100, month.income ? (month.expenses / month.income) * 100 : 100)}%` }} /></div><p className={month.balance < 0 ? 'negativeText' : 'positiveText'}>Saldo {formatMoney(month.balance)}</p></article>) : <div className="dashboardEmpty">Nenhum lançamento futuro encontrado.</div>}</div>
+      </section>
+
+      <div className="dashboardColumns"><section className="dashboardSection"><div className="sectionTitle"><div><span>MICRO</span><h3>Para onde vai</h3></div><p>Saídas do mês por categoria.</p></div><div className="breakdownList">{categories.length ? categories.map((item) => <div key={item.name}><div><span>{item.name}</span><strong>{formatMoney(item.expenses)}</strong></div><i><b style={{ width: `${(item.expenses / biggestCategory) * 100}%` }} /></i></div>) : <div className="dashboardEmpty">Sem despesas nesta competência.</div>}</div></section>
+        <section className="dashboardSection"><div className="sectionTitle"><div><span>CARTEIRAS</span><h3>Impacto por conta</h3></div><p>Movimento líquido no mês.</p></div><div className="walletList">{(data?.carteiras || []).length ? data.carteiras.map((item) => <div key={item.name}><span>{item.name}</span><strong className={item.balance < 0 ? 'negativeText' : 'positiveText'}>{formatMoney(item.balance)}</strong><small>{formatMoney(item.expenses)} em saídas</small></div>) : <div className="dashboardEmpty">Sem movimentação por carteira.</div>}</div></section></div>
+
+      <section className="dashboardSection"><div className="sectionTitle"><div><span>PLANEJAMENTO</span><h3>Próximas dívidas</h3></div><p>Parcelas e recorrências já conhecidas.</p></div><div className="futureTable">{(data?.dividasFuturas || []).length ? data.dividasFuturas.slice(0, 12).map((item) => <article key={`${item.id}-${item.competence}`}><div><span>{formatCompetenceLabel(item.competence)}</span><strong>{item.description}</strong><small>{item.wallet} · {item.category}{item.installmentCount > 1 ? ` · ${item.installment}/${item.installmentCount}` : ''}</small></div><b className="negativeText">{formatMoney(item.value)}</b></article>) : <div className="dashboardEmpty">Nenhuma dívida futura cadastrada.</div>}</div></section>
+
+      <section className="dashboardSection"><div className="sectionTitle"><div><span>{formatCompetenceLabel(toCompetence(competence)).toUpperCase()}</span><h3>Lançamentos do mês</h3></div><p>Do maior impacto para o menor.</p></div><div className="futureTable currentLaunches">{(data?.lancamentos || []).length ? data.lancamentos.map((item) => <article key={item.id || `${item.description}-${item.value}`}><div><span>{item.category}</span><strong>{item.description}</strong><small>{item.wallet}{item.installmentCount > 1 ? ` · Parcela ${item.installment}/${item.installmentCount}` : ''}</small></div><b className={item.value < 0 ? 'negativeText' : 'positiveText'}>{formatMoney(item.value)}</b></article>) : <div className="dashboardEmpty">Nenhum lançamento nesta competência.</div>}</div></section>
+    </>}
+    <footer><span>DASHBOARD FINANCEIRO</span><p>Dados lidos diretamente do Google Sheets.</p><span>V0.6</span></footer>
+  </main>
+}
+
 function App() {
   const [hasAccess, setHasAccess] = useState(() => sessionStorage.getItem(SESSION_KEY) === 'true')
   const [form, setForm] = useState(createInitialForm)
@@ -237,7 +321,7 @@ function App() {
   const [settingsLoaded, setSettingsLoaded] = useState(false)
   const [status, setStatus] = useState({ kind: '', message: '' })
   const [loading, setLoading] = useState('')
-  const [view, setView] = useState('launch')
+  const [view, setView] = useState('dashboard')
   const configured = isApiConfigured()
   const isInstallment = form.tipoPagamento === 'Parcelado'
 
@@ -276,17 +360,6 @@ function App() {
     setStatus({ kind: 'success', message: result.message })
   }
 
-  async function reloadSpreadsheet() {
-    setLoading('planilha'); setStatus({ kind: '', message: '' })
-    try {
-      const result = await callApi({ action: 'inicializar' })
-      setSettings(result.configuracoes || { carteiras: [], categorias: [] })
-      setSettingsLoaded(true)
-      setStatus({ kind: 'success', message: 'Planilha recarregada e estrutura conferida.' })
-    } catch (error) { setStatus({ kind: 'error', message: error.message }) }
-    finally { setLoading('') }
-  }
-
   async function handleSubmit(event) {
     event.preventDefault(); setLoading('adicionar'); setStatus({ kind: '', message: '' })
     try {
@@ -301,15 +374,15 @@ function App() {
   }
 
   if (!hasAccess) return <AccessGate onAccess={grantAccess} />
-  if (view === 'recurring') return <RecurringScreen settings={settings} onBack={() => setView('launch')} />
+  if (view === 'dashboard') return <DashboardScreen onNavigate={setView} onSettingsUpdate={(nextSettings) => { setSettings(nextSettings); setSettingsLoaded(true) }} />
+  if (view === 'recurring') return <RecurringScreen settings={settings} onBack={() => setView('dashboard')} />
 
   return <main className="shell">
-    <header className="brand"><span className="brandMark" aria-hidden="true">C$</span><div><p className="eyebrow">FINANÇAS SEM BUROCRACIA</p><h1>Cash Of Anarchy</h1></div>
+    <header className="brand"><button className="backButton" onClick={() => setView('dashboard')} aria-label="Voltar ao dashboard">←</button><div><p className="eyebrow">NOVO LANÇAMENTO</p><h1>Cash Of Anarchy</h1></div>
       <span className={`connection ${configured ? 'online' : ''}`}><i /> {configured ? 'Sheets conectado' : 'Modo demonstração'}</span></header>
 
     <section className="hero compactHero"><div><p className="kicker">NOVO LANÇAMENTO</p><h2>Lance agora.<br /><em>Controle sempre.</em></h2><p className="lead">Registre receitas, despesas e lançamentos parcelados. Entradas ficam positivas; saídas, negativas.</p></div>
-      <div className="heroActions"><button className="setupButton recurringNav" onClick={() => setView('recurring')}><span>Lançamentos recorrentes</span><small>Visualize, crie e edite recorrências</small></button>
-      <button className="setupButton" disabled={Boolean(loading)} onClick={reloadSpreadsheet}><span>{loading === 'planilha' ? 'Recarregando…' : 'Recarregar planilha'}</span><small>Confere as colunas e atualiza carteiras e categorias</small></button></div></section>
+      </section>
 
     <section className="settingsStrip"><div><span>CARTEIRAS</span><strong>{settings.carteiras.length}</strong></div><div><span>CATEGORIAS</span><strong>{settings.categorias.length}</strong></div><p>Edite a aba “Configuracoes” no Google Sheets e toque em recarregar.</p></section>
 

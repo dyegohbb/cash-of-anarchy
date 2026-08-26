@@ -32,6 +32,7 @@ function doPost(event) {
     const payload = JSON.parse(event.postData.contents || '{}');
     if (payload.action === 'inicializar') return initializeApplication();
     if (payload.action === 'obterConfiguracoes') return getSettingsResponse();
+    if (payload.action === 'obterDashboard') return getDashboardResponse(payload.competencia);
     if (payload.action === 'adicionar') return addLaunch(payload);
     if (payload.action === 'listarRecorrentes') return listRecurringResponse();
     if (payload.action === 'adicionarRecorrente') return addRecurring(payload);
@@ -70,6 +71,82 @@ function getSettingsResponse() {
   const sheet = getOrCreateSheet(getSpreadsheet(), CONFIG.SETTINGS_SHEET);
   initializeSettingsSheet(sheet);
   return jsonResponse({ ok: true, configuracoes: readSettings(sheet) });
+}
+
+function getDashboardResponse(rawCompetence) {
+  const competence = normalizeCompetence(rawCompetence);
+  if (!competence) throw new Error('Informe uma competência válida no formato MM/AAAA.');
+  const sheet = getOrCreateSheet(getSpreadsheet(), CONFIG.LAUNCHES_SHEET);
+  const headerMap = ensureLaunchHeaders(sheet);
+  const launches = readDashboardLaunches(sheet, headerMap);
+  const selected = launches.filter((item) => item.competence === competence);
+  const future = launches.filter((item) => compareCompetences(item.competence, competence) >= 0);
+  const monthGroups = {};
+  future.forEach((item) => {
+    if (!monthGroups[item.competence]) monthGroups[item.competence] = [];
+    monthGroups[item.competence].push(item);
+  });
+
+  const planning = Object.keys(monthGroups)
+    .sort(compareCompetences)
+    .slice(0, 18)
+    .map((month) => ({ competence: month, ...summarizeLaunches(monthGroups[month]) }));
+  const categories = groupDashboardValues(selected.filter((item) => item.value < 0), 'category', true);
+  const wallets = groupDashboardValues(selected, 'wallet', false);
+  const upcomingDebts = future.filter((item) => item.value < 0)
+    .sort((left, right) => compareCompetences(left.competence, right.competence) || left.description.localeCompare(right.description))
+    .slice(0, 60);
+
+  return jsonResponse({
+    ok: true,
+    competencia: competence,
+    resumo: summarizeLaunches(selected),
+    planejamento: planning,
+    categorias: categories,
+    carteiras: wallets,
+    lancamentos: selected.sort((left, right) => Math.abs(right.value) - Math.abs(left.value)).slice(0, 100),
+    dividasFuturas: upcomingDebts,
+    totalDividasFuturas: future.filter((item) => item.value < 0).reduce((total, item) => total + Math.abs(item.value), 0),
+  });
+}
+
+function readDashboardLaunches(sheet, headerMap) {
+  if (sheet.getLastRow() < 2) return [];
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, headerMap.headers.length).getValues();
+  const get = (row, header) => headerMap.indexes[header] === undefined ? '' : row[headerMap.indexes[header]];
+  return rows.map((row) => {
+    const competence = normalizeCompetence(get(row, 'Competência'));
+    const movementType = String(get(row, 'Tipo') || '');
+    const rawValue = Number(get(row, 'Valor'));
+    if (!competence || !Number.isFinite(rawValue) || !['Entrada', 'Saída'].includes(movementType)) return null;
+    return {
+      id: String(get(row, 'ID') || ''), groupId: String(get(row, 'groupId') || ''), recurringId: String(get(row, 'recurringId') || ''),
+      description: String(get(row, 'Descrição') || ''), value: normalizeSignedValue(rawValue, movementType), movementType,
+      category: String(get(row, 'Categoria') || 'Sem categoria'), wallet: String(get(row, 'Carteira') || 'Sem carteira'),
+      paymentType: String(get(row, 'Tipo de pagamento') || ''), installment: Number(get(row, 'Parcela')) || 1,
+      installmentCount: Number(get(row, 'Total de parcelas')) || 1, competence,
+      launchDate: formatDateForApi(get(row, 'Data do lançamento')), origin: String(get(row, 'Origem') || ''),
+    };
+  }).filter(Boolean);
+}
+
+function summarizeLaunches(items) {
+  const income = items.reduce((total, item) => total + (item.value > 0 ? item.value : 0), 0);
+  const expenses = items.reduce((total, item) => total + (item.value < 0 ? Math.abs(item.value) : 0), 0);
+  return { income, expenses, balance: income - expenses, count: items.length };
+}
+
+function groupDashboardValues(items, property, expensesOnly) {
+  const groups = {};
+  items.forEach((item) => {
+    const key = item[property] || 'Não informado';
+    if (!groups[key]) groups[key] = { name: key, income: 0, expenses: 0, balance: 0, count: 0 };
+    if (item.value > 0) groups[key].income += item.value;
+    if (item.value < 0) groups[key].expenses += Math.abs(item.value);
+    groups[key].balance += item.value;
+    groups[key].count += 1;
+  });
+  return Object.values(groups).sort((left, right) => expensesOnly ? right.expenses - left.expenses : Math.abs(right.balance) - Math.abs(left.balance));
 }
 
 function addLaunch(payload) {
