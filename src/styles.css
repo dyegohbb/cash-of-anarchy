@@ -345,7 +345,7 @@ footer p { display: none; margin: 0; }
 }
 
 @media (min-width: 1000px) {
-  .shell { width: min(1440px, calc(100% - 64px)); }
+  .shell { width: min(1920px, calc(100% - 64px)); }
   .dashboardBrand { min-height: 88px; }
   .dashboardIntro { grid-template-columns: minmax(0, 1fr) 300px; padding: 42px 0 28px; }
   .dashboardIntro h2 { font-size: clamp(64px, 6vw, 92px); }
