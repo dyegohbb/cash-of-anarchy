@@ -174,11 +174,12 @@ function processRecurring(rawCompetence) {
   const recurringSheet = getOrCreateSheet(spreadsheet, CONFIG.RECURRING_SHEET);
   const recurringMap = ensureHeaders(recurringSheet, CONFIG.RECURRING_HEADERS);
   const rules = readRecurringRowsRaw(recurringSheet, recurringMap)
-    .filter((item) => item.status === 'Ativa' && item.periodicity === 'Mensal' && compareCompetences(item.initialCompetence, competence) <= 0);
+    .filter((item) => item.status === 'Ativa' && item.periodicity === 'Mensal' && item.initialCompetence && compareCompetences(item.initialCompetence, competence) <= 0);
 
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
   let generated = 0;
+  let alreadyExisting = 0;
   try {
     const launches = getOrCreateSheet(spreadsheet, CONFIG.LAUNCHES_SHEET);
     const launchMap = ensureLaunchHeaders(launches);
@@ -187,7 +188,7 @@ function processRecurring(rawCompetence) {
     const rows = [];
     rules.forEach((rule) => {
       const key = `${rule.recurringId}|${competence}`;
-      if (existingKeys.has(key)) return;
+      if (existingKeys.has(key)) { alreadyExisting += 1; return; }
       rows.push(buildLaunchRow(launchMap, {
         id: Utilities.getUuid(), groupId: Utilities.getUuid(), recurringId: rule.recurringId,
         description: rule.description, value: rule.value, movementType: rule.movementType,
@@ -202,7 +203,12 @@ function processRecurring(rawCompetence) {
   } finally {
     lock.releaseLock();
   }
-  return jsonResponse({ ok: true, competencia: competence, lancamentosCriados: generated, message: `${generated} lançamento(s) recorrente(s) criado(s).` });
+  const message = generated
+    ? `${generated} lançamento(s) recorrente(s) criado(s).${alreadyExisting ? ` ${alreadyExisting} já existia(m).` : ''}`
+    : rules.length
+      ? `${alreadyExisting} lançamento(s) dessa competência já existia(m). Nenhuma duplicação foi criada.`
+      : 'Nenhuma recorrência ativa começa nessa competência ou antes dela.';
+  return jsonResponse({ ok: true, competencia: competence, recorrenciasElegiveis: rules.length, lancamentosCriados: generated, lancamentosExistentes: alreadyExisting, message });
 }
 
 function removeRecurringLaunches(rawCompetence) {
@@ -222,7 +228,7 @@ function removeRecurringLaunches(rawCompetence) {
     const recurringIndex = headerMap.indexes['recurringId'];
     const rowsToDelete = [];
     rows.forEach((row, index) => {
-      if (String(row[competenceIndex]) === competence && String(row[recurringIndex]).trim()) rowsToDelete.push(index + 2);
+      if (normalizeCompetence(row[competenceIndex]) === competence && String(row[recurringIndex]).trim()) rowsToDelete.push(index + 2);
     });
     rowsToDelete.reverse().forEach((rowNumber) => sheet.deleteRow(rowNumber));
     removed = rowsToDelete.length;
@@ -291,7 +297,7 @@ function readRecurringRowsRaw(sheet, headerMap) {
       recurringId: String(row[headerMap.indexes['recurringId']]), description: String(row[headerMap.indexes['Descrição']] || ''),
       value: normalizeSignedValue(Number(row[headerMap.indexes['Valor']]), movementType), movementType,
       category: String(row[headerMap.indexes['Categoria']] || ''), wallet: String(row[headerMap.indexes['Carteira']] || ''),
-      startDate: row[headerMap.indexes['Data de início']], initialCompetence: String(row[headerMap.indexes['Competência inicial']] || ''),
+      startDate: row[headerMap.indexes['Data de início']], initialCompetence: normalizeCompetence(row[headerMap.indexes['Competência inicial']]),
       periodicity: String(row[headerMap.indexes['Periodicidade']] || ''), status: String(row[headerMap.indexes['Status']] || ''),
     };
     });
@@ -309,7 +315,9 @@ function readRecurringLaunchKeys(sheet, headerMap) {
   const recurringIndex = headerMap.indexes['recurringId'];
   const competenceIndex = headerMap.indexes['Competência'];
   const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, headerMap.headers.length).getValues();
-  return new Set(rows.filter((row) => row[recurringIndex] && row[competenceIndex]).map((row) => `${row[recurringIndex]}|${row[competenceIndex]}`));
+  return new Set(rows.map((row) => ({ recurringId: String(row[recurringIndex] || ''), competence: normalizeCompetence(row[competenceIndex]) }))
+    .filter((item) => item.recurringId && item.competence)
+    .map((item) => `${item.recurringId}|${item.competence}`));
 }
 
 function validateLaunch(payload, settings) {
@@ -396,6 +404,7 @@ function ensureLaunchHeaders(sheet) {
   sheet.autoResizeColumns(1, ordered.length);
   const indexes = Object.fromEntries(ordered.map((header, index) => [header, index]));
   normalizeExistingLaunchSigns(sheet, indexes);
+  normalizeCompetenceColumn(sheet, indexes['Competência']);
   if (indexes['Valor'] !== undefined) sheet.getRange(2, indexes['Valor'] + 1, Math.max(1, sheet.getMaxRows() - 1), 1).setNumberFormat('R$ #,##0.00');
   if (indexes['Data do lançamento'] !== undefined) sheet.getRange(2, indexes['Data do lançamento'] + 1, Math.max(1, sheet.getMaxRows() - 1), 1).setNumberFormat('dd/mm/yyyy');
   if (indexes['Data de inserção'] !== undefined) sheet.getRange(2, indexes['Data de inserção'] + 1, Math.max(1, sheet.getMaxRows() - 1), 1).setNumberFormat('dd/mm/yyyy hh:mm');
@@ -445,6 +454,7 @@ function ensureHeaders(sheet, requiredHeaders) {
   }
   const indexes = Object.fromEntries(merged.map((header, index) => [header, index]));
   if (indexes['Valor'] !== undefined) sheet.getRange(2, indexes['Valor'] + 1, Math.max(1, sheet.getMaxRows() - 1), 1).setNumberFormat('R$ #,##0.00');
+  normalizeCompetenceColumn(sheet, indexes['Competência inicial']);
   ['Data de início', 'Data de criação', 'Data de atualização'].forEach((header) => {
     if (indexes[header] !== undefined) sheet.getRange(2, indexes[header] + 1, Math.max(1, sheet.getMaxRows() - 1), 1).setNumberFormat(header === 'Data de início' ? 'dd/mm/yyyy' : 'dd/mm/yyyy hh:mm');
   });
@@ -513,8 +523,28 @@ function getOrCreateSheet(spreadsheet, name) {
 }
 
 function normalizeCompetence(value) {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return Utilities.formatDate(value, Session.getScriptTimeZone(), 'MM/yyyy');
+  }
   const match = String(value || '').trim().match(/^(0[1-9]|1[0-2])\/(\d{4})$/);
   return match ? `${match[1]}/${match[2]}` : '';
+}
+
+function normalizeCompetenceColumn(sheet, zeroBasedIndex) {
+  if (zeroBasedIndex === undefined) return;
+  const rowCount = Math.max(1, sheet.getMaxRows() - 1);
+  const range = sheet.getRange(2, zeroBasedIndex + 1, rowCount, 1);
+  range.setNumberFormat('@');
+  if (sheet.getLastRow() < 2) return;
+
+  const usedRange = sheet.getRange(2, zeroBasedIndex + 1, sheet.getLastRow() - 1, 1);
+  const values = usedRange.getValues();
+  let changed = false;
+  values.forEach((row) => {
+    const normalized = normalizeCompetence(row[0]);
+    if (normalized && row[0] !== normalized) { row[0] = normalized; changed = true; }
+  });
+  if (changed) usedRange.setValues(values);
 }
 
 function addMonthsToCompetence(competence, months) {
