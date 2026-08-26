@@ -362,7 +362,6 @@ function App() {
     setUser(result.usuario)
     setSettings(result.configuracoes || { carteiras: [], categorias: [] })
     setSettingsLoaded(true)
-    setHasAccess(true)
     setStatus({ kind: 'success', message: result.message })
   }
 
