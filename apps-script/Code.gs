@@ -195,6 +195,8 @@ function getDashboardResponse(rawCompetence) {
       : Math.abs(item.value) * item.installmentCount;
   });
   const selected = launches.filter((item) => item.competence === competence);
+  const previous = launches.filter((item) => compareCompetences(item.competence, competence) < 0);
+  const accumulated = launches.filter((item) => compareCompetences(item.competence, competence) <= 0);
   const future = launches.filter((item) => compareCompetences(item.competence, competence) >= 0);
   const monthGroups = {};
   future.forEach((item) => {
@@ -205,7 +207,11 @@ function getDashboardResponse(rawCompetence) {
   const planning = Object.keys(monthGroups)
     .sort(compareCompetences)
     .slice(0, 18)
-    .map((month) => ({ competence: month, ...summarizeLaunches(monthGroups[month]) }));
+    .map((month) => ({
+      competence: month,
+      ...summarizeLaunches(monthGroups[month]),
+      ...summarizeFinancialPosition(launches.filter((item) => compareCompetences(item.competence, month) <= 0)),
+    }));
   const categories = groupDashboardValues(selected.filter((item) => item.value < 0), 'category', true);
   const wallets = groupDashboardValues(selected, 'wallet', false);
   const upcomingDebts = future.filter((item) => item.value < 0)
@@ -216,9 +222,15 @@ function getDashboardResponse(rawCompetence) {
     ok: true,
     competencia: competence,
     resumo: summarizeLaunches(selected),
+    posicao: {
+      ...summarizeFinancialPosition(accumulated),
+      cashPrevious: summarizeFinancialPosition(previous).cashBalance,
+      cashMovement: selected.filter(isCashLaunch).reduce((total, item) => total + item.value, 0),
+    },
     planejamento: planning,
     categorias: categories,
     carteiras: wallets,
+    saldosCarteiras: groupDashboardValues(accumulated, 'wallet', false),
     lancamentos: selected.sort((left, right) => Math.abs(right.value) - Math.abs(left.value)),
     dividasFuturas: upcomingDebts,
     totalDividasFuturas: future.filter((item) => item.value < 0).reduce((total, item) => total + Math.abs(item.value), 0),
@@ -249,6 +261,18 @@ function summarizeLaunches(items) {
   const income = items.reduce((total, item) => total + (item.value > 0 ? item.value : 0), 0);
   const expenses = items.reduce((total, item) => total + (item.value < 0 ? Math.abs(item.value) : 0), 0);
   return { income, expenses, balance: income - expenses, count: items.length };
+}
+
+function isCashLaunch(item) {
+  return String(item.wallet || '').trim().toLowerCase() === 'dinheiro';
+}
+
+function summarizeFinancialPosition(items) {
+  const cashBalance = items.filter(isCashLaunch).reduce((total, item) => total + item.value, 0);
+  const cardBalances = groupDashboardValues(items.filter((item) => !isCashLaunch(item)), 'wallet', false);
+  const cardDebt = cardBalances.reduce((total, card) => total + (card.balance < 0 ? Math.abs(card.balance) : 0), 0);
+  const cardCredit = cardBalances.reduce((total, card) => total + (card.balance > 0 ? card.balance : 0), 0);
+  return { cashBalance, cardDebt, cardCredit, netPosition: cashBalance - cardDebt + cardCredit, cardCount: cardBalances.length };
 }
 
 function groupDashboardValues(items, property, expensesOnly) {
