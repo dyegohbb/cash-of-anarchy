@@ -186,6 +186,21 @@ input:focus, select:focus { border-color: #b7f22f; box-shadow: 0 0 0 3px #b7f22f
 .operationOk { margin-top: 24px; }
 @keyframes operation-spin { to { transform: rotate(360deg); } }
 
+.sheetLoadingOverlay { position: fixed; inset: 0; z-index: 900; padding: max(18px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(18px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); display: grid; place-items: center; overflow-y: auto; background: #050706dc; -webkit-backdrop-filter: blur(7px); backdrop-filter: blur(7px); }
+.sheetLoadingCard { width: min(430px, 100%); padding: 30px 23px 24px; border: 1px solid #3c463d; border-top: 3px solid #b7f22f; border-radius: 9px; background: #141815; box-shadow: 0 28px 90px #000c; }
+.sheetLoadingIcon { position: relative; width: 52px; height: 52px; margin-bottom: 23px; display: grid; place-items: end stretch; gap: 4px; padding: 10px; border: 1px solid #b7f22f66; border-radius: 7px; background: #b7f22f0b; overflow: hidden; }
+.sheetLoadingIcon span, .sheetLoadingIcon i, .sheetLoadingIcon b { display: block; height: 6px; border-radius: 2px; background: #b7f22f; transform-origin: left; animation: sheet-line 1.25s ease-in-out infinite; }
+.sheetLoadingIcon i { width: 76%; animation-delay: .14s; }
+.sheetLoadingIcon b { width: 55%; animation-delay: .28s; }
+.sheetLoadingCard .kicker { margin-bottom: 8px; }
+.sheetLoadingCard h3 { font-size: 24px; letter-spacing: -.035em; }
+.sheetLoadingCard > p:not(.kicker) { margin: 13px 0 0; color: #a6afa6; font-size: 14px; line-height: 1.5; }
+.sheetLoadingBar { height: 7px; margin-top: 24px; overflow: hidden; border-radius: 999px; background: #293029; }
+.sheetLoadingBar i { display: block; width: 38%; height: 100%; border-radius: inherit; background: #b7f22f; animation: sheet-progress 1.15s ease-in-out infinite; }
+.sheetLoadingCard small { display: block; margin-top: 10px; color: #737e74; font-size: 10px; }
+@keyframes sheet-line { 0%, 100% { transform: scaleX(.35); opacity: .45; } 50% { transform: scaleX(1); opacity: 1; } }
+@keyframes sheet-progress { 0% { transform: translateX(-110%); } 100% { transform: translateX(290%); } }
+
 .dashboardShell { gap: 0; }
 .dashboardIntro { display: grid; gap: 24px; padding: 34px 0 24px; }
 .dashboardIntro h2 { font-size: clamp(46px, 14vw, 68px); }

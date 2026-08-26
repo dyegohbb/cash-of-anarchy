@@ -95,6 +95,28 @@ function OperationModal({ operation, onClose }) {
 
 const CLOSED_OPERATION = { open: false, status: '', title: '', message: '', detail: '', current: 0, total: 0 }
 
+function SheetLoadingOverlay({ visible, context, competence }) {
+  useEffect(() => {
+    if (!visible) return undefined
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = previousOverflow }
+  }, [visible])
+  if (!visible) return null
+  const isMonthChange = context === 'month'
+  const isSync = context === 'sync'
+  return <div className="sheetLoadingOverlay" role="status" aria-live="polite" aria-label="Carregando dados da planilha">
+    <section className="sheetLoadingCard">
+      <div className="sheetLoadingIcon" aria-hidden="true"><span /><i /><b /></div>
+      <p className="kicker">GOOGLE SHEETS</p>
+      <h3>{isMonthChange ? `Carregando ${formatMonthInput(competence)}` : isSync ? 'Sincronizando sua planilha' : 'Carregando sua planilha'}</h3>
+      <p>{isMonthChange ? 'Buscando lançamentos, saldos e cartões desta competência…' : isSync ? 'Conferindo a estrutura e atualizando os dados financeiros…' : 'Preparando seu dashboard financeiro…'}</p>
+      <div className="sheetLoadingBar"><i /></div>
+      <small>Isso pode levar alguns segundos.</small>
+    </section>
+  </div>
+}
+
 function storedGoogleUser() {
   if (!getAuthToken()) return null
   try { return JSON.parse(sessionStorage.getItem(USER_KEY) || 'null') }
@@ -316,10 +338,12 @@ function DashboardScreen({ user, onNavigate, onSettingsUpdate, onSignOut }) {
   const [competence, setCompetence] = useState(localMonthValue)
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState('dashboard')
+  const [loadingContext, setLoadingContext] = useState('initial')
   const [message, setMessage] = useState({ kind: '', text: '' })
   const [extractFilters, setExtractFilters] = useState({ description: '', category: '', wallet: '' })
 
-  async function loadDashboard(selectedCompetence = competence, clearMessage = true) {
+  async function loadDashboard(selectedCompetence = competence, clearMessage = true, context = loadingContext) {
+    setLoadingContext(context)
     setLoading('dashboard'); if (clearMessage) setMessage({ kind: '', text: '' })
     try {
       const result = await callApi({ action: 'obterDashboard', competencia: toCompetence(selectedCompetence) })
@@ -334,11 +358,12 @@ function DashboardScreen({ user, onNavigate, onSettingsUpdate, onSignOut }) {
   }, [competence])
 
   async function syncSpreadsheet() {
+    setLoadingContext('sync')
     setLoading('planilha'); setMessage({ kind: '', text: '' })
     try {
       const result = await callApi({ action: 'inicializar' })
       onSettingsUpdate(result.configuracoes || { carteiras: [], categorias: [] })
-      await loadDashboard(competence, false)
+      await loadDashboard(competence, false, 'sync')
       setMessage({ kind: 'success', text: 'Planilha sincronizada e estrutura conferida.' })
     } catch (error) { setMessage({ kind: 'error', text: error.message }); setLoading('') }
   }
@@ -376,7 +401,7 @@ function DashboardScreen({ user, onNavigate, onSettingsUpdate, onSignOut }) {
   return <main className="shell dashboardShell">
     <header className="brand dashboardBrand"><span className="brandMark" aria-hidden="true">C$</span><div><p className="eyebrow">CENTRAL FINANCEIRA</p><h1>Cash Of Anarchy</h1></div><button className="accountButton" onClick={onSignOut} aria-label={`Sair da conta ${user.email}`}><span>{user.email}</span><strong>Sair</strong></button></header>
 
-    <section className="dashboardIntro"><div><p className="kicker">VISÃO GERAL</p><h2>Seu dinheiro.<br /><em>Sem neblina.</em></h2></div><label className="dashboardMonth">Mês analisado<input type="month" value={competence} onChange={(event) => setCompetence(event.target.value)} /></label></section>
+    <section className="dashboardIntro"><div><p className="kicker">VISÃO GERAL</p><h2>Seu dinheiro.<br /><em>Sem neblina.</em></h2></div><label className="dashboardMonth">Mês analisado<input type="month" value={competence} disabled={loading === 'dashboard' || loading === 'planilha'} onChange={(event) => { setLoadingContext('month'); setCompetence(event.target.value) }} /></label></section>
 
     <nav className="dashboardActions" aria-label="Ações principais">
       <button className="primaryAction" onClick={() => onNavigate('launch')}><span>＋</span><strong>Novo lançamento</strong><small>Entrada, saída ou parcela</small></button>
@@ -386,6 +411,7 @@ function DashboardScreen({ user, onNavigate, onSettingsUpdate, onSignOut }) {
     </nav>
 
     {message.text && <div className={`notice dashboardNotice ${message.kind}`} role="status">{message.text}</div>}
+    <SheetLoadingOverlay visible={loading === 'dashboard' || loading === 'planilha'} context={loadingContext} competence={competence} />
     {loading === 'dashboard' && !data ? <section className="dashboardLoading">Lendo sua planilha…</section> : <>
       <section className="metricGrid">
         <article className="metricCard"><span>ENTRADAS</span><strong className="positiveText">{formatMoney(summary.income)}</strong><small>{summary.count} lançamentos no mês</small></article>
