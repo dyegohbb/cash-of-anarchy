@@ -70,6 +70,9 @@ h2 em { color: #b7f22f; font-style: normal; }
 .setupButton:active { border-color: #b7f22f; background: #1d241e; transform: scale(.99); }
 .setupButton span { display: block; font-weight: 700; }
 .setupButton small { display: block; color: #879187; margin-top: 6px; }
+.heroActions { display: grid; gap: 10px; width: 100%; }
+.heroActions .setupButton { max-width: none; }
+.recurringNav { border-color: #6c852f; background: #1b2318; }
 
 .panel { background: #141815; border: 1px solid #303630; border-top: 3px solid #b7f22f; padding: 22px 16px; box-shadow: 0 18px 50px #0005; }
 .panelHeading { display: flex; align-items: flex-start; border-bottom: 1px solid #2b302c; padding-bottom: 18px; margin-bottom: 20px; }
@@ -80,6 +83,7 @@ h3 { margin: 0; font-size: 20px; }
 form { display: grid; grid-template-columns: 1fr; gap: 17px; align-items: end; }
 label { color: #aab2aa; text-transform: uppercase; letter-spacing: .09em; font: 500 10px DM Mono; }
 label.wide { grid-column: auto; }
+.fieldHint { display: block; margin-top: 6px; color: #758076; font: 400 10px Inter, sans-serif; letter-spacing: 0; text-transform: none; }
 input, select {
   width: 100%;
   min-height: 52px;
@@ -104,6 +108,61 @@ input:focus, select:focus { border-color: #b7f22f; box-shadow: 0 0 0 3px #b7f22f
 .notice { margin-top: 18px; padding: 14px; border-left: 3px solid #b7f22f; border-radius: 0 6px 6px 0; background: #b7f22f10; color: #dff5a9; font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
 .notice.error { border-color: #ff665e; background: #ff665e10; color: #ffaaa5; }
 .notice.info { border-color: #d6bd70; color: #ead79e; }
+.compactHero { padding-bottom: 24px; }
+.settingsStrip { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; margin-bottom: 18px; border: 1px solid #303630; background: #303630; }
+.settingsStrip > div { display: flex; align-items: center; justify-content: space-between; padding: 15px; background: #141815; }
+.settingsStrip span { color: #7e897f; font: 500 9px DM Mono; letter-spacing: .12em; }
+.settingsStrip strong { color: #b7f22f; font: 500 20px DM Mono; }
+.settingsStrip p { grid-column: 1 / -1; margin: 0; padding: 12px 15px; background: #111512; color: #808981; font-size: 11px; line-height: 1.45; }
+.launchForm .fieldFull { grid-column: 1 / -1; }
+.installmentOptions { display: grid; grid-template-columns: 1fr; gap: 10px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.installmentOptions legend { margin-bottom: 10px; color: #aab2aa; text-transform: uppercase; letter-spacing: .09em; font: 500 10px DM Mono; }
+.radioCard { min-height: 64px; display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid #3b443d; border-radius: 7px; background: #0d100e; text-transform: none; letter-spacing: normal; }
+.radioCard:has(input:checked) { border-color: #b7f22f; background: #b7f22f0a; }
+.radioCard input { width: 20px; min-height: 20px; height: 20px; flex: 0 0 auto; margin: 0; padding: 0; accent-color: #b7f22f; -webkit-appearance: auto; appearance: auto; }
+.radioCard span, .radioCard strong, .radioCard small { display: block; }
+.radioCard strong { color: #eef3e9; font: 700 14px Inter, sans-serif; }
+.radioCard small { margin-top: 4px; color: #7f897f; font: 400 11px Inter, sans-serif; }
+.launchSummary { min-height: 82px; display: flex; flex-direction: column; justify-content: center; padding: 14px 16px; border: 1px solid #344034; border-radius: 7px; background: #182019; }
+.launchSummary span { color: #8e998e; font-size: 11px; }
+.launchSummary strong { margin-top: 4px; color: #b7f22f; font-size: 23px; letter-spacing: -.04em; }
+.launchSummary small { margin-top: 5px; color: #7d877d; font-size: 10px; }
+.amountPositive strong, .amountPositive.recurringValue { color: #5df09a; }
+.amountNegative strong, .amountNegative.recurringValue { color: #ff746c; }
+.launchSummary.amountPositive { border-color: #3b7653; background: #14251a; }
+.launchSummary.amountNegative { border-color: #72413d; background: #261817; }
+.saveLaunch { min-height: 82px; }
+.backButton { width: 44px; height: 44px; flex: 0 0 auto; border: 1px solid #3d463d; border-radius: 50%; background: #171c18; color: #b7f22f; font-size: 22px; }
+.recurringHero { display: grid; gap: 24px; padding: 38px 0 26px; }
+.recurringHero h2 { font-size: clamp(46px, 14.5vw, 66px); }
+.newRecurring { align-self: end; }
+.recurringProcessor { display: grid; gap: 18px; margin-bottom: 18px; padding: 20px 17px; border: 1px solid #3b443d; border-top: 3px solid #b7f22f; background: #141815; }
+.recurringProcessor .kicker { margin-bottom: 8px; }
+.recurringProcessor h3 { font-size: 19px; }
+.recurringProcessor > div > p:last-child { margin: 8px 0 0; color: #879187; font-size: 12px; line-height: 1.45; }
+.recurringProcessorActions { display: grid; gap: 10px; }
+.dangerButton { min-height: 52px; width: 100%; padding: 0 16px; border: 1px solid #a64d48; border-radius: 7px; background: #261817; color: #ff8a83; font-weight: 700; }
+.dangerButton:active { background: #351c1a; transform: scale(.99); }
+.recurringList { display: grid; gap: 14px; }
+.emptyState { min-height: 180px; display: grid; place-content: center; gap: 8px; padding: 30px; border: 1px dashed #3b443d; color: #7f897f; text-align: center; }
+.emptyState strong { color: #e4e9e1; }
+.recurringCard { padding: 20px 17px; border: 1px solid #303630; border-left: 3px solid #b7f22f; border-radius: 0 8px 8px 0; background: #141815; }
+.recurringCardTop { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.recurringCategory { color: #889288; font: 500 9px DM Mono; letter-spacing: .1em; text-transform: uppercase; }
+.recurringCard h3 { margin-top: 5px; }
+.statusBadge { flex: 0 0 auto; padding: 6px 8px; border-radius: 999px; font: 500 9px DM Mono; letter-spacing: .08em; text-transform: uppercase; }
+.statusBadge.active { color: #b7f22f; background: #b7f22f14; border: 1px solid #b7f22f55; }
+.statusBadge.inactive { color: #899189; background: #89918912; border: 1px solid #89918944; }
+.recurringValue { display: block; margin: 20px 0; color: #b7f22f; font-size: 30px; letter-spacing: -.05em; }
+.recurringCard dl { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 10px; margin: 0 0 20px; }
+.recurringCard dl div { min-width: 0; }
+.recurringCard dt { color: #727d73; font: 500 9px DM Mono; letter-spacing: .06em; text-transform: uppercase; }
+.recurringCard dd { margin: 5px 0 0; color: #d8ded6; font-size: 12px; overflow-wrap: anywhere; }
+.editButton, .cancelButton { min-height: 44px; border: 1px solid #3b443d; border-radius: 6px; background: #0f1310; color: #e5eae2; }
+.editButton { width: 100%; padding: 0 14px; display: flex; align-items: center; justify-content: space-between; font-weight: 700; }
+.cancelButton { padding: 0 13px; }
+.recurringFormPanel { margin-top: 4px; }
+.floatingNotice { margin-bottom: 16px; }
 
 .accessPage {
   min-height: 100vh;
@@ -133,11 +192,21 @@ footer p { display: none; margin: 0; }
   h2 { font-size: clamp(60px, 8vw, 98px); }
   .lead { max-width: 560px; font-size: 17px; line-height: 1.7; margin-top: 30px; }
   .setupButton { max-width: 360px; justify-self: end; padding: 20px; }
+  .heroActions { max-width: 360px; justify-self: end; }
   .panel { padding: 30px; }
   .panelHeading { justify-content: space-between; align-items: center; padding-bottom: 24px; margin-bottom: 28px; }
   .panelHeading p { display: block; }
   form { grid-template-columns: 1.5fr .8fr .8fr; gap: 20px; }
   label.wide { grid-column: span 2; }
+  .launchForm { grid-template-columns: repeat(3, 1fr); }
+  .installmentOptions { grid-template-columns: 1fr 1fr; }
+  .launchSummary { grid-column: span 2; }
+  .settingsStrip { grid-template-columns: 180px 180px 1fr; }
+  .settingsStrip p { grid-column: auto; display: flex; align-items: center; }
+  .recurringHero { grid-template-columns: 1fr 280px; align-items: end; padding: 58px 0 36px; }
+  .recurringProcessor { grid-template-columns: 1.2fr .7fr 1fr; align-items: end; padding: 24px; }
+  .recurringList { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .recurringFormPanel { margin-top: 10px; }
   .accessCard { width: min(500px, 100%); padding: 46px; }
   footer p { display: block; }
 }
