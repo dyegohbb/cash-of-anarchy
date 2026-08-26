@@ -144,6 +144,8 @@ input:focus, select:focus { border-color: #b7f22f; box-shadow: 0 0 0 3px #b7f22f
 .recurringProcessor h3 { font-size: 19px; }
 .recurringProcessor > div > p:last-child { margin: 8px 0 0; color: #879187; font-size: 12px; line-height: 1.45; }
 .recurringProcessorActions { display: grid; gap: 10px; }
+.rangeFields { min-width: 0; display: grid; grid-template-columns: 1fr; gap: 12px; }
+.removalProcessor { display: grid; gap: 10px; padding-top: 18px; border-top: 1px solid #303630; }
 .dangerButton { min-height: 52px; width: 100%; padding: 0 16px; border: 1px solid #a64d48; border-radius: 7px; background: #261817; color: #ff8a83; font-weight: 700; }
 .dangerButton:active { background: #351c1a; transform: scale(.99); }
 .recurringList { display: grid; gap: 14px; }
@@ -166,6 +168,23 @@ input:focus, select:focus { border-color: #b7f22f; box-shadow: 0 0 0 3px #b7f22f
 .cancelButton { padding: 0 13px; }
 .recurringFormPanel { margin-top: 4px; }
 .floatingNotice { margin-bottom: 16px; }
+
+.operationOverlay { position: fixed; inset: 0; z-index: 1000; padding: max(18px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(18px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); display: grid; place-items: center; overflow-y: auto; overscroll-behavior: contain; background: #050706e8; -webkit-backdrop-filter: blur(9px); backdrop-filter: blur(9px); }
+.operationModal { width: min(440px, 100%); padding: 28px 22px 22px; border: 1px solid #3d463d; border-top: 3px solid #b7f22f; border-radius: 9px; background: #141815; box-shadow: 0 28px 90px #000c; }
+.operationModal.success { border-top-color: #5df09a; }
+.operationModal.error { border-top-color: #ff746c; }
+.operationMark { width: 46px; height: 46px; margin-bottom: 22px; display: grid; place-items: center; border-radius: 50%; background: #b7f22f12; border: 1px solid #b7f22f66; color: #b7f22f; font: 700 22px DM Mono; }
+.operationModal.success .operationMark { border-color: #5df09a66; background: #5df09a12; color: #5df09a; }
+.operationModal.error .operationMark { border-color: #ff746c66; background: #ff746c12; color: #ff746c; }
+.operationModal .kicker { margin-bottom: 8px; }
+.operationModal h3 { font-size: 24px; letter-spacing: -.035em; }
+.operationMessage { margin: 14px 0 0; color: #dce2d9; font-size: 15px; line-height: 1.5; }
+.operationDetail { display: block; margin-top: 8px; color: #849085; font-size: 11px; line-height: 1.45; }
+.operationProgress { height: 7px; margin-top: 22px; overflow: hidden; border-radius: 999px; background: #293029; }
+.operationProgress i { display: block; height: 100%; border-radius: inherit; background: #b7f22f; transition: width .25s ease; }
+.operationSpinner { width: 28px; height: 28px; margin-top: 24px; border: 3px solid #344034; border-top-color: #b7f22f; border-radius: 50%; animation: operation-spin .8s linear infinite; }
+.operationOk { margin-top: 24px; }
+@keyframes operation-spin { to { transform: rotate(360deg); } }
 
 .dashboardShell { gap: 0; }
 .dashboardIntro { display: grid; gap: 24px; padding: 34px 0 24px; }
@@ -285,6 +304,9 @@ footer p { display: none; margin: 0; }
   .settingsStrip p { grid-column: auto; display: flex; align-items: center; }
   .recurringHero { grid-template-columns: 1fr 280px; align-items: end; padding: 58px 0 36px; }
   .recurringProcessor { grid-template-columns: 1.2fr .7fr 1fr; align-items: end; padding: 24px; }
+  .recurringProcessor.rangeProcessor { grid-template-columns: minmax(220px, 1fr) minmax(360px, 1.2fr) minmax(200px, .7fr); align-items: end; }
+  .rangeProcessor .rangeFields { grid-template-columns: 1fr 1fr; }
+  .rangeProcessor .removalProcessor { grid-column: 1 / -1; grid-template-columns: minmax(240px, .6fr) minmax(260px, .4fr); align-items: end; }
   .recurringList { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .recurringFormPanel { margin-top: 10px; }
   .accessCard { width: min(500px, 100%); padding: 46px; }
@@ -339,6 +361,7 @@ footer p { display: none; margin: 0; }
   .extractFilters { grid-template-columns: 1fr; }
   .extractFilters label:first-child { grid-column: auto; }
   .accountButton { max-width: 126px; }
+  .operationModal { padding: 25px 19px 19px; }
 }
 
 @supports (-webkit-touch-callout: none) {

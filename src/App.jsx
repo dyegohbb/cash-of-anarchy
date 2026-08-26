@@ -50,6 +50,51 @@ function formatMoney(value) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Math.abs(Number(value) || 0))
 }
 
+function formatMonthInput(value) {
+  const [year, month] = String(value || '').split('-').map(Number)
+  if (!year || !month) return 'mês selecionado'
+  return new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(new Date(year, month - 1, 1))
+}
+
+function competenceRange(start, end) {
+  const [startYear, startMonth] = String(start || '').split('-').map(Number)
+  const [endYear, endMonth] = String(end || '').split('-').map(Number)
+  if (!startYear || !startMonth || !endYear || !endMonth) return []
+  const first = (startYear * 12) + startMonth
+  const last = (endYear * 12) + endMonth
+  if (last < first || last - first > 35) return []
+  return Array.from({ length: last - first + 1 }, (_, index) => {
+    const absoluteMonth = first + index
+    const month = ((absoluteMonth - 1) % 12) + 1
+    const year = Math.floor((absoluteMonth - 1) / 12)
+    return `${year}-${String(month).padStart(2, '0')}`
+  })
+}
+
+function OperationModal({ operation, onClose }) {
+  useEffect(() => {
+    if (!operation.open) return undefined
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = previousOverflow }
+  }, [operation.open])
+  if (!operation.open) return null
+  const finished = operation.status === 'success' || operation.status === 'error'
+  return <div className="operationOverlay" role="presentation">
+    <section className={`operationModal ${operation.status}`} role="dialog" aria-modal="true" aria-labelledby="operationTitle" aria-describedby="operationMessage">
+      <span className="operationMark" aria-hidden="true">{operation.status === 'success' ? '✓' : operation.status === 'error' ? '!' : '↻'}</span>
+      <p className="kicker">{operation.status === 'success' ? 'CONCLUÍDO' : operation.status === 'error' ? 'NÃO FOI POSSÍVEL CONCLUIR' : 'AGUARDE'}</p>
+      <h3 id="operationTitle">{operation.title}</h3>
+      <p id="operationMessage" className="operationMessage">{operation.message}</p>
+      {operation.detail && <small className="operationDetail">{operation.detail}</small>}
+      {operation.total > 0 && <div className="operationProgress" aria-label={`Progresso ${operation.current} de ${operation.total}`}><i style={{ width: `${Math.round((operation.current / operation.total) * 100)}%` }} /></div>}
+      {finished ? <button type="button" className="submitButton operationOk" onClick={onClose}>OK <span>→</span></button> : <div className="operationSpinner" aria-hidden="true" />}
+    </section>
+  </div>
+}
+
+const CLOSED_OPERATION = { open: false, status: '', title: '', message: '', detail: '', current: 0, total: 0 }
+
 function storedGoogleUser() {
   if (!getAuthToken()) return null
   try { return JSON.parse(sessionStorage.getItem(USER_KEY) || 'null') }
@@ -133,8 +178,11 @@ function RecurringScreen({ settings, onBack }) {
   const [mode, setMode] = useState('list')
   const [form, setForm] = useState(emptyForm)
   const [processingCompetence, setProcessingCompetence] = useState(localMonthValue)
+  const [processingEndCompetence, setProcessingEndCompetence] = useState(localMonthValue)
+  const [removalCompetence, setRemovalCompetence] = useState(localMonthValue)
   const [loading, setLoading] = useState('listar')
   const [message, setMessage] = useState({ kind: '', text: '' })
+  const [operation, setOperation] = useState(CLOSED_OPERATION)
 
   async function loadItems() {
     setLoading('listar')
@@ -163,6 +211,7 @@ function RecurringScreen({ settings, onBack }) {
   async function saveRecurring(event) {
     event.preventDefault(); setLoading('salvar'); setMessage({ kind: '', text: '' })
     const editing = Boolean(form.recurringId)
+    setOperation({ open: true, status: 'loading', title: editing ? 'Salvando alterações' : 'Criando recorrência', message: 'Enviando os dados para sua planilha…', detail: '', current: 0, total: 0 })
     try {
       const result = await callApi({
         action: editing ? 'atualizarRecorrente' : 'adicionarRecorrente', ...form,
@@ -170,27 +219,53 @@ function RecurringScreen({ settings, onBack }) {
       })
       setMessage({ kind: 'success', text: result.message })
       await loadItems(); setMode('list')
-    } catch (error) { setMessage({ kind: 'error', text: error.message }) }
+      setOperation({ open: true, status: 'success', title: editing ? 'Recorrência atualizada' : 'Recorrência criada', message: result.message, detail: 'A alteração já está disponível na sua planilha.', current: 0, total: 0 })
+    } catch (error) {
+      setMessage({ kind: 'error', text: error.message })
+      setOperation({ open: true, status: 'error', title: 'Erro ao salvar recorrência', message: error.message, detail: 'Revise os dados e tente novamente.', current: 0, total: 0 })
+    }
     finally { setLoading('') }
   }
 
-  async function processCompetence() {
+  async function processCompetenceRange() {
+    const months = competenceRange(processingCompetence, processingEndCompetence)
+    if (!months.length) {
+      setOperation({ open: true, status: 'error', title: 'Período inválido', message: 'A competência final deve ser igual ou posterior à inicial.', detail: 'O período pode ter no máximo 36 meses.', current: 0, total: 0 })
+      return
+    }
     setLoading('processar'); setMessage({ kind: '', text: '' })
+    let created = 0
     try {
-      const result = await callApi({ action: 'processarRecorrentes', competencia: toCompetence(processingCompetence) })
-      setMessage({ kind: 'success', text: result.message })
-    } catch (error) { setMessage({ kind: 'error', text: error.message }) }
+      for (let index = 0; index < months.length; index += 1) {
+        const month = months[index]
+        setOperation({ open: true, status: 'loading', title: 'Processando recorrências', message: `Processando ${formatMonthInput(month)}`, detail: `${index + 1}/${months.length}`, current: index + 1, total: months.length })
+        const result = await callApi({ action: 'processarRecorrentes', competencia: toCompetence(month) })
+        created += Number(result.lancamentosCriados || 0)
+        setOperation((current) => ({ ...current, current: index + 1 }))
+      }
+      const resultMessage = `${months.length} competência(s) processada(s). ${created} lançamento(s) criado(s).`
+      setMessage({ kind: 'success', text: resultMessage })
+      setOperation({ open: true, status: 'success', title: 'Período processado', message: resultMessage, detail: `${formatMonthInput(months[0])} até ${formatMonthInput(months[months.length - 1])}`, current: months.length, total: months.length })
+    } catch (error) {
+      setMessage({ kind: 'error', text: error.message })
+      setOperation((current) => ({ ...current, status: 'error', title: 'Processamento interrompido', message: error.message, detail: `${current.current}/${months.length} competência(s) concluída(s)` }))
+    }
     finally { setLoading('') }
   }
 
   async function removeCompetence() {
-    const competence = toCompetence(processingCompetence)
+    const competence = toCompetence(removalCompetence)
     if (!window.confirm(`Remover os lançamentos recorrentes de ${competence}? As regras continuarão cadastradas.`)) return
     setLoading('remover'); setMessage({ kind: '', text: '' })
+    setOperation({ open: true, status: 'loading', title: 'Removendo lançamentos', message: `Removendo ${formatMonthInput(removalCompetence)}`, detail: 'As regras de recorrência serão mantidas.', current: 0, total: 0 })
     try {
       const result = await callApi({ action: 'removerLancamentosRecorrentes', competencia: competence })
       setMessage({ kind: 'success', text: result.message })
-    } catch (error) { setMessage({ kind: 'error', text: error.message }) }
+      setOperation({ open: true, status: 'success', title: 'Remoção concluída', message: result.message, detail: `${formatMonthInput(removalCompetence)} foi processado.`, current: 0, total: 0 })
+    } catch (error) {
+      setMessage({ kind: 'error', text: error.message })
+      setOperation({ open: true, status: 'error', title: 'Erro ao remover lançamentos', message: error.message, detail: 'Nenhuma regra de recorrência foi removida.', current: 0, total: 0 })
+    }
     finally { setLoading('') }
   }
 
@@ -200,10 +275,11 @@ function RecurringScreen({ settings, onBack }) {
       {mode === 'list' && <button className="submitButton newRecurring" onClick={openNew}>Nova recorrência <span>＋</span></button>}
     </section>
 
-    {mode === 'list' && <section className="recurringProcessor">
-      <div><p className="kicker">GERAR LANÇAMENTOS</p><h3>Processar uma competência</h3><p>Cria ou remove somente os lançamentos recorrentes do mês escolhido.</p></div>
-      <label>Competência<input required type="month" value={processingCompetence} disabled={Boolean(loading)} onChange={(event) => setProcessingCompetence(event.target.value)} /><small className="fieldHint">Referência: {competenceReference(processingCompetence)}</small></label>
-      <div className="recurringProcessorActions"><button className="submitButton" disabled={Boolean(loading) || !processingCompetence} onClick={processCompetence}>{loading === 'processar' ? 'Processando…' : 'Processar mês'} <span>→</span></button><button className="dangerButton" disabled={Boolean(loading) || !processingCompetence} onClick={removeCompetence}>{loading === 'remover' ? 'Removendo…' : 'Remover lançamentos do mês'}</button></div>
+    {mode === 'list' && <section className="recurringProcessor rangeProcessor">
+      <div className="processorIntro"><p className="kicker">GERAR LANÇAMENTOS</p><h3>Processar um período</h3><p>O frontend processa uma competência por vez, em ordem, usando a ação mensal existente.</p></div>
+      <div className="rangeFields"><label>Competência inicial<input required type="month" value={processingCompetence} disabled={Boolean(loading)} onChange={(event) => setProcessingCompetence(event.target.value)} /></label><label>Competência final<input required type="month" min={processingCompetence} value={processingEndCompetence} disabled={Boolean(loading)} onChange={(event) => setProcessingEndCompetence(event.target.value)} /></label></div>
+      <div className="recurringProcessorActions"><button className="submitButton" disabled={Boolean(loading) || !processingCompetence || !processingEndCompetence} onClick={processCompetenceRange}>{loading === 'processar' ? 'Processando período…' : 'Processar período'} <span>→</span></button></div>
+      <div className="removalProcessor"><label>Remover lançamentos de<input required type="month" value={removalCompetence} disabled={Boolean(loading)} onChange={(event) => setRemovalCompetence(event.target.value)} /></label><button className="dangerButton" disabled={Boolean(loading) || !removalCompetence} onClick={removeCompetence}>{loading === 'remover' ? 'Removendo…' : 'Remover lançamentos do mês'}</button></div>
     </section>}
 
     {mode === 'list' ? <section className="recurringList" aria-busy={loading === 'listar'}>
@@ -231,6 +307,7 @@ function RecurringScreen({ settings, onBack }) {
       </form>
     </section>}
     {message.text && <div className={`notice floatingNotice ${message.kind}`} role="status">{message.text}</div>}
+    <OperationModal operation={operation} onClose={() => setOperation(CLOSED_OPERATION)} />
     <footer><span>RECORRÊNCIAS · MENSAL</span><p>Regras separadas dos lançamentos financeiros.</p><span>V0.4</span></footer>
   </main>
 }
@@ -343,6 +420,7 @@ function App() {
   const [settingsLoaded, setSettingsLoaded] = useState(false)
   const [status, setStatus] = useState({ kind: '', message: '' })
   const [loading, setLoading] = useState('')
+  const [operation, setOperation] = useState(CLOSED_OPERATION)
   const [view, setView] = useState('dashboard')
   const configured = isApiConfigured()
   const isInstallment = form.tipoPagamento === 'Parcelado'
@@ -396,6 +474,7 @@ function App() {
 
   async function handleSubmit(event) {
     event.preventDefault(); setLoading('adicionar'); setStatus({ kind: '', message: '' })
+    setOperation({ open: true, status: 'loading', title: isInstallment ? 'Criando parcelas' : 'Salvando lançamento', message: isInstallment ? `Gerando ${form.parcelas} parcelas e enviando para a planilha…` : 'Enviando o lançamento para sua planilha…', detail: '', current: 0, total: 0 })
     try {
       const result = await callApi({
         action: 'adicionar', ...form, valor: Number(form.valor), parcelas: isInstallment ? Number(form.parcelas) : 1,
@@ -403,7 +482,11 @@ function App() {
       })
       setStatus({ kind: 'success', message: result.message })
       setForm((current) => ({ ...createInitialForm(), categoria: current.categoria, carteira: current.carteira }))
-    } catch (error) { setStatus({ kind: 'error', message: error.message }) }
+      setOperation({ open: true, status: 'success', title: isInstallment ? 'Parcelas criadas' : 'Lançamento salvo', message: result.message, detail: 'Os dados já estão disponíveis na sua planilha.', current: 0, total: 0 })
+    } catch (error) {
+      setStatus({ kind: 'error', message: error.message })
+      setOperation({ open: true, status: 'error', title: 'Erro ao salvar lançamento', message: error.message, detail: 'Revise os dados e tente novamente.', current: 0, total: 0 })
+    }
     finally { setLoading('') }
   }
 
@@ -444,6 +527,7 @@ function App() {
       </form>
       {status.message && <div className={`notice ${status.kind}`} role="status">{status.message}</div>}
     </section>
+    <OperationModal operation={operation} onClose={() => setOperation(CLOSED_OPERATION)} />
     <footer><span>REACT · APPS SCRIPT · SHEETS</span><p>groupId agrupa parcelas do mesmo lançamento.</p><span>V0.5</span></footer>
   </main>
 }
