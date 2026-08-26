@@ -7,7 +7,7 @@ O `SPREADSHEET_ID` continua apontando para um único arquivo Google Sheets. O Ap
 - `Lancamentos`: registros financeiros e parcelas.
 - `Configuracoes`: carteiras e categorias utilizadas pelo frontend.
 
-Na primeira entrada com a senha, as duas abas são criadas ou atualizadas automaticamente.
+Na primeira entrada com a conta Google autorizada, as abas são criadas ou atualizadas automaticamente.
 
 ## Configurações dinâmicas
 

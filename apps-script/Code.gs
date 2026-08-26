@@ -30,6 +30,8 @@ function doGet() {
 function doPost(event) {
   try {
     const payload = JSON.parse(event.postData.contents || '{}');
+    const identity = verifyGoogleIdentity(payload.idToken);
+    if (payload.action === 'autenticarGoogle') return jsonResponse({ ok: true, usuario: identity });
     if (payload.action === 'inicializar') return initializeApplication();
     if (payload.action === 'obterConfiguracoes') return getSettingsResponse();
     if (payload.action === 'obterDashboard') return getDashboardResponse(payload.competencia);
@@ -42,8 +44,46 @@ function doPost(event) {
     return jsonResponse({ ok: false, error: 'Ação não permitida.' });
   } catch (error) {
     console.error(error);
-    return jsonResponse({ ok: false, error: safeError(error) });
+    return jsonResponse({ ok: false, error: safeError(error), code: error && error.code || 'REQUEST_FAILED' });
   }
+}
+
+function verifyGoogleIdentity(idToken) {
+  const properties = PropertiesService.getScriptProperties();
+  const clientId = String(properties.getProperty('GOOGLE_CLIENT_ID') || '').trim();
+  const allowedEmails = String(properties.getProperty('ALLOWED_GOOGLE_EMAILS') || '')
+    .split(',').map((email) => email.trim().toLowerCase()).filter(Boolean);
+  if (!clientId || !allowedEmails.length) throw createAuthError('Login Google não configurado no Apps Script.');
+
+  const token = String(idToken || '').trim();
+  if (!token || token.length > 10000) throw createAuthError('Faça login com sua conta Google para continuar.');
+  const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, token)
+    .map((byte) => (`0${((byte + 256) % 256).toString(16)}`).slice(-2)).join('');
+  const cache = CacheService.getScriptCache();
+  const cached = cache.get(`google-identity:${digest}`);
+  if (cached) return JSON.parse(cached);
+
+  const response = UrlFetchApp.fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(token)}`, { muteHttpExceptions: true });
+  if (response.getResponseCode() !== 200) throw createAuthError('Sua sessão Google expirou. Entre novamente.');
+  const claims = JSON.parse(response.getContentText() || '{}');
+  const issuerValid = claims.iss === 'https://accounts.google.com' || claims.iss === 'accounts.google.com';
+  const email = String(claims.email || '').toLowerCase();
+  const expiresAt = Number(claims.exp || 0);
+  if (!issuerValid || claims.aud !== clientId || String(claims.email_verified) !== 'true' || expiresAt * 1000 <= Date.now()) {
+    throw createAuthError('Não foi possível validar sua conta Google.');
+  }
+  if (!allowedEmails.includes(email)) throw createAuthError('Esta conta Google não tem acesso à aplicação.');
+
+  const identity = { sub: String(claims.sub || ''), email, name: String(claims.name || email), picture: String(claims.picture || '') };
+  const ttlSeconds = Math.max(60, Math.min(3300, expiresAt - Math.floor(Date.now() / 1000) - 30));
+  cache.put(`google-identity:${digest}`, JSON.stringify(identity), ttlSeconds);
+  return identity;
+}
+
+function createAuthError(message) {
+  const error = new Error(message);
+  error.code = 'AUTH_REQUIRED';
+  return error;
 }
 
 function initializeApplication() {
@@ -672,7 +712,7 @@ function sanitizeText(value, maxLength) {
 
 function safeError(error) {
   const message = String(error && error.message || 'Requisição inválida.');
-  const expected = ['SPREADSHEET_ID', 'descrição', 'valor', 'movimento', 'Categoria', 'Carteira', 'pagamento', 'parcelas', 'competência', 'data do lançamento', 'recorrência', 'Periodicidade', 'Status', 'data de início'];
+  const expected = ['SPREADSHEET_ID', 'descrição', 'valor', 'movimento', 'Categoria', 'Carteira', 'pagamento', 'parcelas', 'competência', 'data do lançamento', 'recorrência', 'Periodicidade', 'Status', 'data de início', 'Google', 'conta', 'acesso', 'sessão', 'login'];
   return expected.some((term) => message.toLowerCase().includes(term.toLowerCase())) ? message : 'Não foi possível concluir a operação.';
 }
 

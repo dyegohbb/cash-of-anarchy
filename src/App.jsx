@@ -1,12 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
-import { callApi, isApiConfigured } from './api.js'
+import { callApi, clearAuthToken, getAuthToken, isApiConfigured, setAuthToken } from './api.js'
 
-const ACCESS_PASSWORD = import.meta.env.VITE_ACCESS_PASSWORD || ''
-const MAX_ATTEMPTS = 3
-const LOCK_DURATION_MS = 15 * 60 * 1000
-const ATTEMPTS_KEY = 'cash-of-anarchy:access-attempts'
-const LOCK_KEY = 'cash-of-anarchy:locked-until'
-const SESSION_KEY = 'cash-of-anarchy:access-granted'
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID?.trim() || ''
+const USER_KEY = 'cash-of-anarchy:google-user'
 
 function localDateValue() {
   const now = new Date()
@@ -52,6 +48,12 @@ function formatMoney(value) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Math.abs(Number(value) || 0))
 }
 
+function storedGoogleUser() {
+  if (!getAuthToken()) return null
+  try { return JSON.parse(sessionStorage.getItem(USER_KEY) || 'null') }
+  catch { return null }
+}
+
 function formatCompetenceLabel(value) {
   const [month, year] = String(value || '').split('/')
   if (!month || !year) return value || '—'
@@ -60,67 +62,56 @@ function formatCompetenceLabel(value) {
 }
 
 function AccessGate({ onAccess }) {
-  const [password, setPassword] = useState('')
-  const [attempts, setAttempts] = useState(() => Number(localStorage.getItem(ATTEMPTS_KEY) || 0))
-  const [lockedUntil, setLockedUntil] = useState(() => Number(localStorage.getItem(LOCK_KEY) || 0))
-  const [remainingSeconds, setRemainingSeconds] = useState(0)
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(false)
+  const [googleReady, setGoogleReady] = useState(false)
 
   useEffect(() => {
-    const updateLock = () => {
-      const remaining = Math.max(0, Math.ceil((lockedUntil - Date.now()) / 1000))
-      setRemainingSeconds(remaining)
-      if (!remaining && lockedUntil) {
-        localStorage.removeItem(LOCK_KEY); localStorage.removeItem(ATTEMPTS_KEY)
-        setLockedUntil(0); setAttempts(0); setMessage('')
+    if (!GOOGLE_CLIENT_ID) { setMessage('Configure VITE_GOOGLE_CLIENT_ID para ativar o login Google.'); return }
+    let active = true
+    const initializeGoogle = () => {
+      if (!active || !window.google?.accounts?.id) return
+      window.google.accounts.id.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        callback: async ({ credential }) => {
+          setLoading(true); setMessage('')
+          try {
+            setAuthToken(credential)
+            const authentication = await callApi({ action: 'autenticarGoogle' }, credential)
+            const initialization = await callApi({ action: 'inicializar' }, credential)
+            onAccess({ ...initialization, usuario: authentication.usuario })
+          } catch (error) {
+            clearAuthToken(); setMessage(error.message)
+          } finally { setLoading(false) }
+        },
+        auto_select: false,
+        cancel_on_tap_outside: true,
+      })
+      const container = document.getElementById('googleSignInButton')
+      if (container) {
+        container.innerHTML = ''
+        window.google.accounts.id.renderButton(container, { theme: 'outline', size: 'large', shape: 'rectangular', text: 'signin_with', width: Math.min(360, window.innerWidth - 72) })
       }
+      setGoogleReady(true)
     }
-    updateLock()
-    const timer = setInterval(updateLock, 1000)
-    return () => clearInterval(timer)
-  }, [lockedUntil])
-
-  async function handleSubmit(event) {
-    event.preventDefault()
-    if (remainingSeconds > 0 || loading) return
-    if (!ACCESS_PASSWORD) return setMessage('A variável VITE_ACCESS_PASSWORD não foi configurada.')
-    if (password !== ACCESS_PASSWORD) {
-      const nextAttempts = attempts + 1
-      setPassword('')
-      if (nextAttempts >= MAX_ATTEMPTS) {
-        const until = Date.now() + LOCK_DURATION_MS
-        localStorage.setItem(LOCK_KEY, String(until)); localStorage.setItem(ATTEMPTS_KEY, String(MAX_ATTEMPTS))
-        setAttempts(MAX_ATTEMPTS); setLockedUntil(until); setMessage('Acesso bloqueado após três tentativas incorretas.')
-      } else {
-        localStorage.setItem(ATTEMPTS_KEY, String(nextAttempts)); setAttempts(nextAttempts)
-        setMessage(`Senha incorreta. Você ainda tem ${MAX_ATTEMPTS - nextAttempts} tentativa(s).`)
-      }
-      return
+    const existing = document.getElementById('googleIdentityServices')
+    if (window.google?.accounts?.id) initializeGoogle()
+    else if (existing) existing.addEventListener('load', initializeGoogle, { once: true })
+    else {
+      const script = document.createElement('script')
+      script.id = 'googleIdentityServices'; script.src = 'https://accounts.google.com/gsi/client'; script.async = true; script.defer = true
+      script.addEventListener('load', initializeGoogle, { once: true }); script.addEventListener('error', () => active && setMessage('Não foi possível carregar o login Google.'))
+      document.head.appendChild(script)
     }
-    setLoading(true); setMessage('')
-    try {
-      const result = await callApi({ action: 'inicializar' })
-      localStorage.removeItem(ATTEMPTS_KEY); localStorage.removeItem(LOCK_KEY)
-      sessionStorage.setItem(SESSION_KEY, 'true')
-      onAccess(result)
-    } catch (error) {
-      setMessage(`Senha correta, mas a aplicação não pôde ser inicializada: ${error.message}`)
-    } finally { setLoading(false) }
-  }
+    return () => { active = false; existing?.removeEventListener('load', initializeGoogle) }
+  }, [onAccess])
 
-  const minutes = Math.floor(remainingSeconds / 60)
-  const seconds = String(remainingSeconds % 60).padStart(2, '0')
   return <main className="accessPage"><section className="accessCard">
     <span className="brandMark accessMark" aria-hidden="true">C$</span><p className="kicker">ACESSO RESTRITO</p><h1>Cash Of Anarchy</h1>
-    <p>Informe a senha padrão para preparar suas planilhas e entrar no sistema.</p>
-    <form className="accessForm" onSubmit={handleSubmit}><label>Senha de acesso
-      <input required type="password" autoComplete="current-password" enterKeyHint="go" value={password} disabled={remainingSeconds > 0 || loading} onChange={(event) => setPassword(event.target.value)} placeholder="Digite sua senha" />
-    </label><button className="submitButton" disabled={remainingSeconds > 0 || loading} type="submit">
-      {loading ? 'Preparando planilhas…' : remainingSeconds > 0 ? `Bloqueado por ${minutes}:${seconds}` : 'Entrar'} <span>→</span>
-    </button></form>
+    <p>Entre com a conta Google autorizada para acessar seus dados financeiros.</p>
+    <div className={`googleLoginArea ${loading ? 'isLoading' : ''}`}><div id="googleSignInButton" />{loading && <span>Validando conta e preparando planilhas…</span>}{!googleReady && !message && <span>Carregando login seguro…</span>}</div>
     {message && <div className="notice error" role="alert">{message}</div>}
-    <small className="attemptHint">Máximo de três tentativas. O bloqueio dura 15 minutos neste navegador.</small>
+    <small className="attemptHint">Somente contas autorizadas no Apps Script conseguem ler ou alterar a planilha.</small>
   </section></main>
 }
 
@@ -237,7 +228,7 @@ function RecurringScreen({ settings, onBack }) {
   </main>
 }
 
-function DashboardScreen({ onNavigate, onSettingsUpdate }) {
+function DashboardScreen({ user, onNavigate, onSettingsUpdate, onSignOut }) {
   const [competence, setCompetence] = useState(localMonthValue)
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState('dashboard')
@@ -279,7 +270,7 @@ function DashboardScreen({ onNavigate, onSettingsUpdate }) {
   const biggestCategory = Math.max(1, ...categories.map((item) => item.expenses))
 
   return <main className="shell dashboardShell">
-    <header className="brand dashboardBrand"><span className="brandMark" aria-hidden="true">C$</span><div><p className="eyebrow">CENTRAL FINANCEIRA</p><h1>Cash Of Anarchy</h1></div><span className="connection online"><i /> Sheets conectado</span></header>
+    <header className="brand dashboardBrand"><span className="brandMark" aria-hidden="true">C$</span><div><p className="eyebrow">CENTRAL FINANCEIRA</p><h1>Cash Of Anarchy</h1></div><button className="accountButton" onClick={onSignOut} aria-label={`Sair da conta ${user.email}`}><span>{user.email}</span><strong>Sair</strong></button></header>
 
     <section className="dashboardIntro"><div><p className="kicker">VISÃO GERAL</p><h2>Seu dinheiro.<br /><em>Sem neblina.</em></h2></div><label className="dashboardMonth">Mês analisado<input type="month" value={competence} onChange={(event) => setCompetence(event.target.value)} /></label></section>
 
@@ -315,7 +306,7 @@ function DashboardScreen({ onNavigate, onSettingsUpdate }) {
 }
 
 function App() {
-  const [hasAccess, setHasAccess] = useState(() => sessionStorage.getItem(SESSION_KEY) === 'true')
+  const [user, setUser] = useState(storedGoogleUser)
   const [form, setForm] = useState(createInitialForm)
   const [settings, setSettings] = useState({ carteiras: [], categorias: [] })
   const [settingsLoaded, setSettingsLoaded] = useState(false)
@@ -326,14 +317,20 @@ function App() {
   const isInstallment = form.tipoPagamento === 'Parcelado'
 
   useEffect(() => {
-    if (!hasAccess || settingsLoaded) return
+    if (!user || settingsLoaded) return
     callApi({ action: 'obterConfiguracoes' })
       .then((result) => {
         setSettings(result.configuracoes || { carteiras: [], categorias: [] })
         setSettingsLoaded(true)
       })
       .catch((error) => setStatus({ kind: 'error', message: error.message }))
-  }, [hasAccess, settingsLoaded])
+  }, [user, settingsLoaded])
+
+  useEffect(() => {
+    const expireSession = () => { sessionStorage.removeItem(USER_KEY); setUser(null); setSettingsLoaded(false) }
+    window.addEventListener('cash-of-anarchy:auth-expired', expireSession)
+    return () => window.removeEventListener('cash-of-anarchy:auth-expired', expireSession)
+  }, [])
 
   useEffect(() => {
     setForm((current) => ({
@@ -354,10 +351,17 @@ function App() {
   }, [form.valor, form.parcelas, form.modoParcelamento, form.tipo, isInstallment])
 
   function grantAccess(result) {
+    sessionStorage.setItem(USER_KEY, JSON.stringify(result.usuario))
+    setUser(result.usuario)
     setSettings(result.configuracoes || { carteiras: [], categorias: [] })
     setSettingsLoaded(true)
     setHasAccess(true)
     setStatus({ kind: 'success', message: result.message })
+  }
+
+  function signOut() {
+    clearAuthToken(); sessionStorage.removeItem(USER_KEY); setUser(null); setSettingsLoaded(false); setView('dashboard')
+    window.google?.accounts?.id?.disableAutoSelect()
   }
 
   async function handleSubmit(event) {
@@ -373,8 +377,8 @@ function App() {
     finally { setLoading('') }
   }
 
-  if (!hasAccess) return <AccessGate onAccess={grantAccess} />
-  if (view === 'dashboard') return <DashboardScreen onNavigate={setView} onSettingsUpdate={(nextSettings) => { setSettings(nextSettings); setSettingsLoaded(true) }} />
+  if (!user) return <AccessGate onAccess={grantAccess} />
+  if (view === 'dashboard') return <DashboardScreen user={user} onSignOut={signOut} onNavigate={setView} onSettingsUpdate={(nextSettings) => { setSettings(nextSettings); setSettingsLoaded(true) }} />
   if (view === 'recurring') return <RecurringScreen settings={settings} onBack={() => setView('dashboard')} />
 
   return <main className="shell">

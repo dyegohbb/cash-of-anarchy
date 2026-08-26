@@ -9,8 +9,9 @@ MVP gratuito para registrar entradas e saídas em uma planilha Google por uma in
 - gravação no Google Sheets via Apps Script;
 - modo demonstração enquanto a API não está configurada;
 - layout responsivo pronto para GitHub Pages ou Vercel.
-- tela de acesso por senha, com três tentativas e bloqueio de 15 minutos por navegador;
-- inicialização automática da planilha após a senha correta.
+- autenticação com conta Google e validação obrigatória do token no Apps Script;
+- autorização por lista de e-mails permitidos mantida nas propriedades privadas do Apps Script;
+- inicialização automática da planilha após o login autorizado.
 - categorias e carteiras carregadas dinamicamente da aba `Configuracoes`;
 - competência e data do lançamento;
 - lançamentos à vista e parcelados por valor total ou valor da parcela;
@@ -31,26 +32,39 @@ copy .env.example .env
 npm run dev
 ```
 
-No `.env`, configure também a senha de acesso:
+No `.env`, configure o Client ID público do Google Identity Services:
 
 ```env
-VITE_ACCESS_PASSWORD=uma-senha-diferente
+VITE_GOOGLE_CLIENT_ID=SEU_CLIENT_ID.apps.googleusercontent.com
 ```
 
-No GitHub, cadastre `VITE_ACCESS_PASSWORD` em **Settings → Secrets and variables → Actions → Secrets → Repository secrets**. A Action usa esse valor durante a compilação.
+O Client ID identifica o aplicativo e pode aparecer no navegador; ele não é um segredo. A autorização real acontece no Apps Script, que valida o token assinado pelo Google e o e-mail permitido em todas as operações.
 
-> Esta senha é uma barreira de interface, não autenticação segura. Como todo valor `VITE_*` é incorporado ao JavaScript público, uma pessoa com conhecimento técnico consegue descobri-la e também limpar o bloqueio local. Proteção real exige validação no backend.
+## Configurar o login Google
+
+1. Abra o [Google Cloud Console](https://console.cloud.google.com/) e selecione ou crie um projeto.
+2. Configure a **Tela de consentimento OAuth** para uso externo e adicione sua própria conta como usuário de teste, se o aplicativo estiver em modo de testes.
+3. Abra **APIs e serviços → Credenciais → Criar credenciais → ID do cliente OAuth**.
+4. Escolha **Aplicativo da Web**.
+5. Em **Origens JavaScript autorizadas**, adicione `http://localhost:5173` e a origem publicada, por exemplo `https://dyegohbb.github.io`.
+6. Copie o Client ID e use o mesmo valor em `VITE_GOOGLE_CLIENT_ID` no frontend e em `GOOGLE_CLIENT_ID` nas propriedades do Apps Script.
+7. Nas propriedades do Apps Script, crie `ALLOWED_GOOGLE_EMAILS` com seu e-mail. Para mais de uma conta, separe por vírgulas.
+
+Não crie nem coloque um Client Secret no frontend. Este fluxo usa apenas o Client ID público e o token de identidade assinado pelo Google.
 
 ## Configurar Google Sheets + Apps Script
 
 1. Crie uma planilha no Google Sheets e copie o ID da URL (o texto entre `/d/` e `/edit`).
 2. Na planilha, abra **Extensões → Apps Script**.
 3. Copie o conteúdo de `apps-script/Code.gs` para o editor e salve.
-4. Em **Configurações do projeto → Propriedades do script**, crie `SPREADSHEET_ID` com o ID da planilha.
+4. Em **Configurações do projeto → Propriedades do script**, crie:
+   - `SPREADSHEET_ID`: ID da planilha;
+   - `GOOGLE_CLIENT_ID`: o mesmo Client ID configurado no frontend;
+   - `ALLOWED_GOOGLE_EMAILS`: seu e-mail Google autorizado.
 5. Clique em **Implantar → Nova implantação → Aplicativo da Web**.
-6. Execute como **você** e escolha quem pode acessar. Para um frontend público sem login, use **Qualquer pessoa**.
+6. Execute como **você** e escolha **Qualquer pessoa** em quem pode acessar. O endpoint precisa receber o `fetch` do GitHub Pages; cada ação continuará bloqueada até o Apps Script validar o token Google e o e-mail permitido.
 7. Copie a URL terminada em `/exec`, crie `.env` a partir de `.env.example` e preencha `VITE_APPS_SCRIPT_URL`.
-8. Reinicie o frontend e entre com a senha. A aplicação inicializará automaticamente as abas `Lancamentos`, `Configuracoes` e `Recorrentes`.
+8. Reinicie o frontend e entre com a conta Google autorizada. A aplicação inicializará automaticamente as abas `Lancamentos`, `Configuracoes` e `Recorrentes`.
 
 ### Aba Configuracoes
 
@@ -72,20 +86,20 @@ Armazena as regras mensais separadamente dos lançamentos efetivos. Cada regra p
 
 O backend disponibiliza `processarRecorrentes` para processar uma competência quando houver um fluxo de consulta ou fechamento. A chave lógica `recurringId + competência` impede duplicação. Lançamentos gerados têm `ID` e `groupId` próprios e compartilham o `recurringId` da regra.
 
-> Atenção: um site estático público não consegue guardar um segredo. Este MVP limita as ações e valida os campos, mas qualquer pessoa que descubra o endpoint poderá enviar lançamentos. Antes de uso real, adicione autenticação (por exemplo, login Google validado no Apps Script) ou restrinja a implantação à sua conta.
+> Não selecione **Somente eu** na implantação Web App usada pelo GitHub Pages. Essa opção protege a URL com a sessão web do Google e impede a chamada `fetch` entre os dois domínios. Nesta implementação, o endpoint é alcançável, mas nenhuma leitura ou escrita ocorre sem token Google válido da conta autorizada.
 
 ## Publicar
 
 ### Vercel (mais simples para este MVP)
 
-Importe o repositório, mantenha o preset Vite e cadastre `VITE_APPS_SCRIPT_URL` nas variáveis do projeto. O comando de build é `npm run build` e a pasta de saída é `dist`.
+Importe o repositório, mantenha o preset Vite e cadastre `VITE_APPS_SCRIPT_URL` e `VITE_GOOGLE_CLIENT_ID` nas variáveis do projeto. O comando de build é `npm run build` e a pasta de saída é `dist`.
 
 ### GitHub Pages
 
 O projeto já inclui uma GitHub Action que gera e publica o site. No GitHub:
 
 1. Abra **Settings → Secrets and variables → Actions → Variables**.
-2. Crie `VITE_APPS_SCRIPT_URL` com a URL `/exec` do Apps Script.
+2. Crie `VITE_APPS_SCRIPT_URL` com a URL `/exec` do Apps Script e `VITE_GOOGLE_CLIENT_ID` com o Client ID OAuth. Ambas são **Repository variables**.
 3. Abra **Settings → Pages** e selecione **GitHub Actions** em *Source*.
 4. Envie uma alteração para `develop` ou `main`, ou execute manualmente a ação **Publicar no GitHub Pages**.
 
@@ -94,7 +108,7 @@ O endereço padrão será `https://SEU_USUARIO.github.io/cash-of-anarchy/`.
 ## Próximos passos sugeridos
 
 1. Validar o fluxo frontend → Apps Script → Sheets.
-2. Adicionar autenticação antes de expor dados reais.
+2. Manter a lista de contas autorizadas e as origens OAuth atualizadas.
 3. Criar o webhook e os comandos do Telegram no mesmo Apps Script.
 4. Evoluir o dashboard com edição e exclusão de lançamentos.
 

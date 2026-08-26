@@ -51,6 +51,9 @@ h1 { margin: 0; font-size: 17px; letter-spacing: -.03em; }
 .connection { margin-left: auto; max-width: 108px; color: #d6bd70; display: flex; align-items: center; gap: 7px; line-height: 1.25; }
 .connection i { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; background: currentColor; box-shadow: 0 0 12px currentColor; }
 .connection.online { color: #b7f22f; }
+.accountButton { margin-left: auto; max-width: 154px; min-height: 42px; padding: 7px 10px; display: flex; flex-direction: column; align-items: flex-end; justify-content: center; border: 1px solid #394139; border-radius: 7px; background: #141815; color: #e5eae2; text-align: right; }
+.accountButton span { width: 100%; overflow: hidden; color: #8b958c; font: 400 9px DM Mono; text-overflow: ellipsis; white-space: nowrap; }
+.accountButton strong { margin-top: 3px; color: #b7f22f; font-size: 10px; }
 
 .hero { display: grid; grid-template-columns: 1fr; gap: 24px; padding: 38px 0 30px; }
 .kicker { color: #b7f22f; margin: 0 0 14px; }
@@ -238,6 +241,10 @@ input:focus, select:focus { border-color: #b7f22f; box-shadow: 0 0 0 3px #b7f22f
 .accessCard h1 { margin: 0; font-size: clamp(36px, 12vw, 52px); letter-spacing: -.06em; }
 .accessCard > p:not(.kicker) { margin: 16px 0 24px; color: #a0aaa0; font-size: 15px; line-height: 1.55; }
 .accessForm { display: grid; grid-template-columns: 1fr; gap: 16px; }
+.googleLoginArea { min-height: 86px; display: grid; place-items: center; gap: 12px; padding: 16px 0; border-top: 1px solid #2e352f; border-bottom: 1px solid #2e352f; }
+.googleLoginArea.isLoading { opacity: .7; pointer-events: none; }
+.googleLoginArea > span { color: #879187; font-size: 11px; text-align: center; }
+#googleSignInButton { min-height: 44px; display: grid; place-items: center; }
 .attemptHint { display: block; margin-top: 17px; color: #747e75; font-size: 11px; line-height: 1.45; }
 
 footer { margin-top: auto; padding: 28px 0 calc(10px + env(safe-area-inset-bottom)); display: flex; justify-content: space-between; color: #667067; }
