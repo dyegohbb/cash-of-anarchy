@@ -71,6 +71,17 @@ function competenceRange(start, end) {
   })
 }
 
+function addMonthsToInput(value, amount) {
+  const [year, month] = String(value || '').split('-').map(Number)
+  if (!year || !month) return ''
+  const date = new Date(year, month - 1 + amount, 1)
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+}
+
+function compareMonthInputs(left, right) {
+  return String(left).localeCompare(String(right))
+}
+
 function OperationModal({ operation, onClose }) {
   useEffect(() => {
     if (!operation.open) return undefined
@@ -334,6 +345,115 @@ function RecurringScreen({ settings, onBack }) {
   </main>
 }
 
+function ProjectionScreen({ settings, onBack }) {
+  const [form, setForm] = useState({
+    descricao: '', carteira: settings.carteiras[0] || 'Dinheiro', tipoPagamento: 'Parcelado',
+    modoValor: 'valorParcela', valor: '', parcelas: '12', competenciaInicial: localMonthValue(), horizonte: '12',
+  })
+  const [result, setResult] = useState(null)
+  const [operation, setOperation] = useState(CLOSED_OPERATION)
+  const [running, setRunning] = useState(false)
+
+  function createSimulationEntries() {
+    const installmentCount = form.tipoPagamento === 'À vista' ? 1 : Number(form.parcelas)
+    const rawCents = Math.round(Number(form.valor) * 100)
+    if (!rawCents || !Number.isInteger(installmentCount) || installmentCount < 1 || installmentCount > 120) return []
+    if (form.tipoPagamento === 'Parcelado' && form.modoValor === 'valorTotal') {
+      const base = Math.floor(rawCents / installmentCount)
+      const remainder = rawCents % installmentCount
+      return Array.from({ length: installmentCount }, (_, index) => ({
+        month: addMonthsToInput(form.competenciaInicial, index),
+        value: -((base + (index < remainder ? 1 : 0)) / 100), installment: index + 1, installmentCount,
+      }))
+    }
+    return Array.from({ length: installmentCount }, (_, index) => ({
+      month: addMonthsToInput(form.competenciaInicial, index), value: -(rawCents / 100), installment: index + 1, installmentCount,
+    }))
+  }
+
+  async function runProjection(event) {
+    event.preventDefault()
+    const horizon = Number(form.horizonte)
+    const simulationEntries = createSimulationEntries()
+    if (!form.descricao.trim() || !form.carteira || !simulationEntries.length || !Number.isInteger(horizon) || horizon < 1 || horizon > 36) {
+      setOperation({ open: true, status: 'error', title: 'Dados inválidos', message: 'Preencha a descrição, o valor, a carteira, as parcelas e um horizonte entre 1 e 36 meses.', detail: '', current: 0, total: 0 })
+      return
+    }
+
+    const months = Array.from({ length: horizon }, (_, index) => addMonthsToInput(form.competenciaInicial, index))
+    const adjustmentsByWallet = {}
+    const projectedRows = []
+    setRunning(true); setResult(null)
+    try {
+      setOperation({ open: true, status: 'loading', title: 'Preparando projeção', message: 'Lendo suas obrigações recorrentes…', detail: `0/${months.length}`, current: 0, total: months.length })
+      const recurringResponse = await callApi({ action: 'listarRecorrentes' })
+      const recurringRules = (recurringResponse.recorrentes || []).filter((rule) => rule.status === 'Ativa' && rule.periodicidade === 'Mensal')
+
+      for (let index = 0; index < months.length; index += 1) {
+        const month = months[index]
+        setOperation({ open: true, status: 'loading', title: 'Calculando horizonte', message: `Analisando ${formatMonthInput(month)}`, detail: `${index + 1}/${months.length}`, current: index + 1, total: months.length })
+        const dashboard = await callApi({ action: 'obterDashboard', competencia: toCompetence(month) })
+        const launches = dashboard.lancamentos || []
+        const missingRecurring = recurringRules.filter((rule) => (
+          compareMonthInputs(fromCompetence(rule.competenciaInicial), month) <= 0
+          && !launches.some((launch) => launch.recurringId && launch.recurringId === rule.recurringId)
+        ))
+        const monthAdjustments = []
+        missingRecurring.forEach((rule) => {
+          const value = rule.tipo === 'Saída' ? -Math.abs(Number(rule.valor) || 0) : Math.abs(Number(rule.valor) || 0)
+          monthAdjustments.push({ wallet: rule.carteira, value, kind: 'recurring', description: rule.descricao })
+        })
+        simulationEntries.filter((entry) => entry.month === month).forEach((entry) => {
+          monthAdjustments.push({ wallet: form.carteira, value: entry.value, kind: 'simulation', description: form.descricao, ...entry })
+        })
+        monthAdjustments.forEach((entry) => { adjustmentsByWallet[entry.wallet] = (adjustmentsByWallet[entry.wallet] || 0) + entry.value })
+
+        const balances = Object.fromEntries((dashboard.saldosCarteiras || []).map((wallet) => [wallet.name, wallet.balance]))
+        Object.entries(adjustmentsByWallet).forEach(([wallet, value]) => { balances[wallet] = (balances[wallet] || 0) + value })
+        const cashBalance = Object.entries(balances).reduce((total, [wallet, value]) => wallet.trim().toLocaleLowerCase('pt-BR') === 'dinheiro' ? total + value : total, 0)
+        const cardBalances = Object.entries(balances).filter(([wallet]) => wallet.trim().toLocaleLowerCase('pt-BR') !== 'dinheiro')
+        const cardDebt = cardBalances.reduce((total, [, value]) => total + (value < 0 ? Math.abs(value) : 0), 0)
+        const cardCredit = cardBalances.reduce((total, [, value]) => total + (value > 0 ? value : 0), 0)
+        const simulatedMonthValue = monthAdjustments.reduce((total, entry) => total + entry.value, 0)
+        const baseSummary = dashboard.resumo || { income: 0, expenses: 0, balance: 0 }
+        projectedRows.push({
+          month, cashBalance, cardDebt, netPosition: cashBalance - cardDebt + cardCredit,
+          income: baseSummary.income + monthAdjustments.reduce((total, entry) => total + (entry.value > 0 ? entry.value : 0), 0),
+          expenses: baseSummary.expenses + monthAdjustments.reduce((total, entry) => total + (entry.value < 0 ? Math.abs(entry.value) : 0), 0),
+          monthlyBalance: baseSummary.balance + simulatedMonthValue,
+          missingRecurringCount: missingRecurring.length,
+          simulation: monthAdjustments.find((entry) => entry.kind === 'simulation') || null,
+        })
+      }
+      setResult({ rows: projectedRows, totalPurchase: Math.abs(simulationEntries.reduce((total, entry) => total + entry.value, 0)), description: form.descricao.trim() })
+      setOperation({ open: true, status: 'success', title: 'Projeção concluída', message: `${months.length} competência(s) analisada(s), considerando lançamentos, cartões, caixa e recorrências pendentes.`, detail: 'Nenhum dado foi salvo na planilha.', current: months.length, total: months.length })
+    } catch (error) {
+      setOperation({ open: true, status: 'error', title: 'Erro ao calcular projeção', message: error.message, detail: 'Nenhuma informação da simulação foi salva.', current: 0, total: 0 })
+    } finally { setRunning(false) }
+  }
+
+  return <main className="shell projectionShell">
+    <header className="brand"><button className="backButton" onClick={onBack} aria-label="Sair da projeção">←</button><div><p className="eyebrow">ANÁLISE TEMPORÁRIA</p><h1>Projeção financeira</h1></div><span className="temporaryBadge">NÃO SALVA</span></header>
+    <section className="projectionHero"><div><p className="kicker">SIMULAÇÃO</p><h2>Antes de comprar.<br/><em>Veja o impacto.</em></h2><p className="lead">Teste uma compra, financiamento ou empréstimo contra seu caixa, cartões, parcelas e obrigações recorrentes.</p></div></section>
+    <section className="panel projectionPanel"><div className="panelHeading"><div><span>P</span><h3>Nova hipótese</h3></div><p>Ao sair desta tela, tudo será apagado.</p></div>
+      <form className="projectionForm" onSubmit={runProjection}>
+        <label className="fieldFull">O que você quer simular?<input required maxLength="100" placeholder="Ex.: Financiamento da moto" value={form.descricao} onChange={(event) => setForm({ ...form, descricao: event.target.value })}/></label>
+        <label>Carteira de impacto<select value={form.carteira} onChange={(event) => setForm({ ...form, carteira: event.target.value })}>{settings.carteiras.map((wallet) => <option key={wallet}>{wallet}</option>)}</select><small className="fieldHint">Dinheiro reduz o caixa; qualquer outra carteira aumenta ou reduz o cartão.</small></label>
+        <label>Pagamento<select value={form.tipoPagamento} onChange={(event) => setForm({ ...form, tipoPagamento: event.target.value })}><option>À vista</option><option>Parcelado</option></select></label>
+        <label>Competência inicial<input required type="month" value={form.competenciaInicial} onChange={(event) => setForm({ ...form, competenciaInicial: event.target.value })}/></label>
+        {form.tipoPagamento === 'Parcelado' && <label>Como informar o valor?<select value={form.modoValor} onChange={(event) => setForm({ ...form, modoValor: event.target.value })}><option value="valorParcela">Valor de cada parcela</option><option value="valorTotal">Valor total da compra</option></select></label>}
+        <label>{form.tipoPagamento === 'Parcelado' && form.modoValor === 'valorParcela' ? 'Valor da parcela (R$)' : form.tipoPagamento === 'Parcelado' ? 'Valor total (R$)' : 'Valor (R$)'}<input required min="0.01" step="0.01" type="number" inputMode="decimal" value={form.valor} onChange={(event) => setForm({ ...form, valor: event.target.value })}/></label>
+        {form.tipoPagamento === 'Parcelado' && <label>Parcelas<input required min="1" max="120" type="number" inputMode="numeric" value={form.parcelas} onChange={(event) => setForm({ ...form, parcelas: event.target.value })}/></label>}
+        <label>Horizonte analisado<input required min="1" max="36" type="number" inputMode="numeric" value={form.horizonte} onChange={(event) => setForm({ ...form, horizonte: event.target.value })}/><small className="fieldHint">Quantidade de meses exibidos, de 1 a 36.</small></label>
+        <button className="submitButton fieldFull" disabled={running || !settings.carteiras.length} type="submit">{running ? 'Calculando projeção…' : 'Calcular impacto'} <span>→</span></button>
+      </form>
+    </section>
+    {result && <section className="projectionResults"><div className="sectionTitle"><div><span>RESULTADO TEMPORÁRIO</span><h3>Horizonte com “{result.description}”</h3></div><p>Total simulado: {formatMoney(result.totalPurchase)}</p></div><div className="projectionTimeline">{result.rows.map((month) => <article key={month.month} className={month.netPosition < 0 ? 'projectionDanger' : ''}><span>{formatMonthInput(month.month)}</span><strong className={month.netPosition < 0 ? 'negativeText' : 'positiveText'}>{formatMoney(month.netPosition)}</strong><small>Posição líquida</small><dl><div><dt>Dinheiro</dt><dd>{formatMoney(month.cashBalance)}</dd></div><div><dt>Cartões</dt><dd>{formatMoney(month.cardDebt)}</dd></div><div><dt>Entradas</dt><dd>{formatMoney(month.income)}</dd></div><div><dt>Saídas</dt><dd>{formatMoney(month.expenses)}</dd></div></dl>{month.simulation && <p>Simulação: parcela {month.simulation.installment}/{month.simulation.installmentCount} · {formatMoney(month.simulation.value)}</p>}{month.missingRecurringCount > 0 && <em>+ {month.missingRecurringCount} recorrência(s) ainda não processada(s)</em>}</article>)}</div></section>}
+    <OperationModal operation={operation} onClose={() => setOperation(CLOSED_OPERATION)}/>
+    <footer><span>PROJEÇÃO · SOMENTE MEMÓRIA</span><p>Nenhum lançamento é criado ou alterado.</p><span>V0.7</span></footer>
+  </main>
+}
+
 function DashboardScreen({ user, onNavigate, onSettingsUpdate, onSignOut }) {
   const [competence, setCompetence] = useState(localMonthValue)
   const [data, setData] = useState(null)
@@ -408,6 +528,7 @@ function DashboardScreen({ user, onNavigate, onSettingsUpdate, onSignOut }) {
 
     <nav className="dashboardActions" aria-label="Ações principais">
       <button className="primaryAction" onClick={() => onNavigate('launch')}><span>＋</span><strong>Novo lançamento</strong><small>Entrada, saída ou parcela</small></button>
+      <button className="projectionAction" onClick={() => onNavigate('projection')}><span>◫</span><strong>Nova projeção</strong><small>Simule uma compra sem salvar</small></button>
       <button onClick={() => onNavigate('recurring')}><span>↻</span><strong>Recorrências</strong><small>Regras e processamento mensal</small></button>
       <button disabled={Boolean(loading)} onClick={syncSpreadsheet}><span>⇅</span><strong>{loading === 'planilha' ? 'Sincronizando…' : 'Sync planilha'}</strong><small>Estrutura e lançamentos</small></button>
       <button disabled={Boolean(loading)} onClick={syncSettings}><span>⚙</span><strong>{loading === 'configuracoes' ? 'Sincronizando…' : 'Sync configuração'}</strong><small>Carteiras e categorias</small></button>
@@ -524,6 +645,7 @@ function App() {
   if (!user) return <AccessGate onAccess={grantAccess} />
   if (view === 'dashboard') return <DashboardScreen user={user} onSignOut={signOut} onNavigate={setView} onSettingsUpdate={(nextSettings) => { setSettings(nextSettings); setSettingsLoaded(true) }} />
   if (view === 'recurring') return <RecurringScreen settings={settings} onBack={() => setView('dashboard')} />
+  if (view === 'projection') return <ProjectionScreen settings={settings} onBack={() => setView('dashboard')} />
 
   return <main className="shell">
     <header className="brand"><button className="backButton" onClick={() => setView('dashboard')} aria-label="Voltar ao dashboard">←</button><div><p className="eyebrow">NOVO LANÇAMENTO</p><h1>Cash Of Anarchy</h1></div>
