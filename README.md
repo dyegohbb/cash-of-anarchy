@@ -9,7 +9,7 @@ MVP gratuito para registrar entradas e saídas em uma planilha Google por uma in
 - gravação no Google Sheets via Apps Script;
 - modo demonstração enquanto a API não está configurada;
 - layout responsivo pronto para GitHub Pages ou Vercel.
-- autenticação com conta Google e validação obrigatória do token no Apps Script;
+- autenticação com conta Google, seguida por sessão própria assinada pelo Apps Script e válida por 12 horas;
 - autorização por lista de e-mails permitidos mantida nas propriedades privadas do Apps Script;
 - inicialização automática da planilha após o login autorizado.
 - categorias e carteiras carregadas dinamicamente da aba `Configuracoes`;
@@ -38,7 +38,7 @@ No `.env`, configure o Client ID público do Google Identity Services:
 VITE_GOOGLE_CLIENT_ID=SEU_CLIENT_ID.apps.googleusercontent.com
 ```
 
-O Client ID identifica o aplicativo e pode aparecer no navegador; ele não é um segredo. A autorização real acontece no Apps Script, que valida o token assinado pelo Google e o e-mail permitido em todas as operações.
+O Client ID identifica o aplicativo e pode aparecer no navegador; ele não é um segredo. No login, o Apps Script valida o token assinado pelo Google e o e-mail permitido. Depois disso, emite uma sessão assinada de 12 horas, verificada em todas as operações sem consultar novamente o Google.
 
 ## Configurar o login Google
 

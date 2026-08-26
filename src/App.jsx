@@ -77,9 +77,9 @@ function AccessGate({ onAccess }) {
         if (!active) return
         setLoading(true); setMessage('')
         try {
-          setAuthToken(credential)
           const authentication = await callApi({ action: 'autenticarGoogle' }, credential)
-          const initialization = await callApi({ action: 'inicializar' }, credential)
+          setAuthToken(authentication.sessionToken)
+          const initialization = await callApi({ action: 'inicializar' })
           onAccess({ ...initialization, usuario: authentication.usuario })
         } catch (error) {
           clearAuthToken(); setMessage(error.message)

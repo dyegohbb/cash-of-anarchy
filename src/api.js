@@ -1,5 +1,5 @@
 const API_URL = import.meta.env.VITE_APPS_SCRIPT_URL?.trim()
-const AUTH_TOKEN_KEY = 'cash-of-anarchy:google-id-token'
+const AUTH_TOKEN_KEY = 'cash-of-anarchy:application-session'
 const AUTH_ERROR_KEY = 'cash-of-anarchy:auth-error'
 
 export function getAuthToken() {
@@ -30,10 +30,13 @@ export async function callApi(payload, tokenOverride) {
     throw new Error('Configure VITE_APPS_SCRIPT_URL para conectar o Google Sheets.')
   }
 
+  const authentication = payload.action === 'autenticarGoogle'
+    ? { idToken: tokenOverride || '' }
+    : { sessionToken: getAuthToken() }
   const response = await fetch(API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify({ ...payload, idToken: tokenOverride || getAuthToken() }),
+    body: JSON.stringify({ ...payload, ...authentication }),
   })
 
   const data = await response.json()

@@ -39,8 +39,11 @@ function authorizeApplication() {
 function doPost(event) {
   try {
     const payload = JSON.parse(event.postData.contents || '{}');
-    const identity = verifyGoogleIdentity(payload.idToken);
-    if (payload.action === 'autenticarGoogle') return jsonResponse({ ok: true, usuario: identity });
+    if (payload.action === 'autenticarGoogle') {
+      const identity = verifyGoogleIdentity(payload.idToken);
+      return jsonResponse({ ok: true, usuario: identity, sessionToken: createApplicationSession(identity) });
+    }
+    verifyApplicationSession(payload.sessionToken);
     if (payload.action === 'inicializar') return initializeApplication();
     if (payload.action === 'obterConfiguracoes') return getSettingsResponse();
     if (payload.action === 'obterDashboard') return getDashboardResponse(payload.competencia);
@@ -60,8 +63,7 @@ function doPost(event) {
 function verifyGoogleIdentity(idToken) {
   const properties = PropertiesService.getScriptProperties();
   const clientId = String(properties.getProperty('GOOGLE_CLIENT_ID') || '').trim();
-  const allowedEmails = String(properties.getProperty('ALLOWED_GOOGLE_EMAILS') || '')
-    .split(',').map((email) => email.trim().toLowerCase()).filter(Boolean);
+  const allowedEmails = getAllowedGoogleEmails();
   if (!clientId || !allowedEmails.length) throw createAuthError('Login Google não configurado no Apps Script.');
 
   const token = String(idToken || '').trim();
@@ -93,6 +95,61 @@ function createAuthError(message) {
   const error = new Error(message);
   error.code = 'AUTH_REQUIRED';
   return error;
+}
+
+function createApplicationSession(identity) {
+  const payload = { sub: identity.sub, email: identity.email, exp: Date.now() + (12 * 60 * 60 * 1000) };
+  const encodedPayload = Utilities.base64EncodeWebSafe(JSON.stringify(payload), Utilities.Charset.UTF_8).replace(/=+$/g, '');
+  return `${encodedPayload}.${signApplicationSession(encodedPayload)}`;
+}
+
+function verifyApplicationSession(sessionToken) {
+  const token = String(sessionToken || '').trim();
+  const parts = token.split('.');
+  if (parts.length !== 2 || !parts[0] || !parts[1]) throw createAuthError('Sua sessão expirou. Entre novamente com Google.');
+  if (!constantTimeEquals(parts[1], signApplicationSession(parts[0]))) throw createAuthError('Sua sessão é inválida. Entre novamente com Google.');
+
+  let session;
+  try { session = JSON.parse(Utilities.newBlob(Utilities.base64DecodeWebSafe(parts[0])).getDataAsString('UTF-8')); }
+  catch (error) { throw createAuthError('Sua sessão é inválida. Entre novamente com Google.'); }
+  const email = String(session.email || '').toLowerCase();
+  if (!session.sub || !email || Number(session.exp || 0) <= Date.now() || !getAllowedGoogleEmails().includes(email)) {
+    throw createAuthError('Sua sessão expirou ou a conta perdeu o acesso. Entre novamente.');
+  }
+  return { sub: String(session.sub), email };
+}
+
+function signApplicationSession(encodedPayload) {
+  const signature = Utilities.computeHmacSha256Signature(encodedPayload, getApplicationSessionSecret());
+  return Utilities.base64EncodeWebSafe(signature).replace(/=+$/g, '');
+}
+
+function getApplicationSessionSecret() {
+  const properties = PropertiesService.getScriptProperties();
+  let secret = properties.getProperty('AUTH_SESSION_SECRET');
+  if (secret) return secret;
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    secret = properties.getProperty('AUTH_SESSION_SECRET');
+    if (!secret) {
+      secret = `${Utilities.getUuid()}${Utilities.getUuid()}${Utilities.getUuid()}`;
+      properties.setProperty('AUTH_SESSION_SECRET', secret);
+    }
+    return secret;
+  } finally { lock.releaseLock(); }
+}
+
+function getAllowedGoogleEmails() {
+  return String(PropertiesService.getScriptProperties().getProperty('ALLOWED_GOOGLE_EMAILS') || '')
+    .split(',').map((email) => email.trim().toLowerCase()).filter(Boolean);
+}
+
+function constantTimeEquals(left, right) {
+  if (left.length !== right.length) return false;
+  let difference = 0;
+  for (let index = 0; index < left.length; index += 1) difference |= left.charCodeAt(index) ^ right.charCodeAt(index);
+  return difference === 0;
 }
 
 function initializeApplication() {
