@@ -206,6 +206,7 @@ input:focus, select:focus { border-color: #b7f22f; box-shadow: 0 0 0 3px #b7f22f
 .monthTimeline article.monthNegative > div i { background: #ff746c; }
 .monthTimeline article > p { margin: 12px 0 0; font-size: 11px; }
 .dashboardColumns { display: grid; gap: 0; }
+.dashboardDetailGrid { min-width: 0; display: grid; gap: 0; }
 .breakdownList { display: grid; gap: 16px; }
 .breakdownList > div > div { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; }
 .breakdownList > div > div strong { font-size: 12px; }
@@ -298,6 +299,55 @@ footer p { display: none; margin: 0; }
   .dashboardColumns { grid-template-columns: 1fr 1fr; gap: 18px; }
   .sectionTitle p { max-width: 210px; }
   footer p { display: block; }
+}
+
+@media (min-width: 1000px) {
+  .shell { width: min(1440px, calc(100% - 64px)); }
+  .dashboardBrand { min-height: 88px; }
+  .dashboardIntro { grid-template-columns: minmax(0, 1fr) 300px; padding: 42px 0 28px; }
+  .dashboardIntro h2 { font-size: clamp(64px, 6vw, 92px); }
+  .dashboardActions { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 22px; }
+  .dashboardActions button { min-height: 104px; padding: 16px 18px; }
+  .dashboardActions strong { font-size: 14px; }
+  .metricGrid { margin-bottom: 22px; }
+  .metricCard { min-height: 138px; }
+  .dashboardSection { margin-bottom: 22px; }
+  .monthTimeline { grid-auto-flow: initial; grid-template-columns: repeat(6, minmax(0, 1fr)); overflow: visible; }
+  .monthTimeline article { min-height: 146px; }
+  .dashboardColumns { grid-template-columns: minmax(0, 1.2fr) minmax(360px, .8fr); gap: 22px; }
+  .dashboardDetailGrid { grid-template-columns: minmax(360px, .85fr) minmax(0, 1.35fr); gap: 22px; align-items: start; }
+  .dashboardDetailGrid > .dashboardSection { height: 100%; }
+  .extractFilters { grid-template-columns: minmax(220px, 1.4fr) minmax(150px, .8fr) minmax(150px, .8fr); }
+  .extractFilters label:first-child { grid-column: auto; }
+  .futureTable article { padding: 15px 4px; }
+  .futureTable article > b { font-size: 15px; }
+  .walletList { grid-template-columns: repeat(3, 1fr); }
+  .walletTotal { grid-column: 1 / -1; }
+}
+
+@media (max-width: 599px) {
+  .dashboardBrand { position: sticky; top: 0; z-index: 20; margin-inline: calc(-1 * max(16px, env(safe-area-inset-left))); padding-inline: max(16px, env(safe-area-inset-left)) max(16px, env(safe-area-inset-right)); background: #0d100ef2; -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); }
+  .dashboardIntro { padding-top: 28px; }
+  .dashboardMonth input { min-height: 54px; }
+  .dashboardSection { padding: 17px 14px; }
+  .sectionTitle { display: grid; }
+  .sectionTitle p { max-width: none; text-align: left; }
+  .futureTable article { align-items: flex-start; }
+  .futureTable article > b { padding-top: 13px; }
+  .listTotal { align-items: flex-start; }
+  .listTotal span { max-width: 58%; line-height: 1.45; }
+  .extractFilters { grid-template-columns: 1fr; }
+  .extractFilters label:first-child { grid-column: auto; }
+  .accountButton { max-width: 126px; }
+}
+
+@supports (-webkit-touch-callout: none) {
+  body { min-height: -webkit-fill-available; }
+  .shell { min-height: -webkit-fill-available; }
+  input[type="date"], input[type="month"], input[type="search"], select { min-width: 0; }
+  input[type="search"] { -webkit-appearance: none; border-radius: 7px; }
+  .monthTimeline { scrollbar-width: none; }
+  .monthTimeline::-webkit-scrollbar { display: none; }
 }
 
 @media (hover: hover) and (pointer: fine) {
