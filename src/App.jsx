@@ -249,13 +249,13 @@ function App() {
     setStatus({ kind: 'success', message: result.message })
   }
 
-  async function reloadSettings() {
-    setLoading('configuracoes'); setStatus({ kind: '', message: '' })
+  async function reloadSpreadsheet() {
+    setLoading('planilha'); setStatus({ kind: '', message: '' })
     try {
-      const result = await callApi({ action: 'obterConfiguracoes' })
-      setSettings(result.configuracoes)
+      const result = await callApi({ action: 'inicializar' })
+      setSettings(result.configuracoes || { carteiras: [], categorias: [] })
       setSettingsLoaded(true)
-      setStatus({ kind: 'success', message: 'Categorias e carteiras atualizadas.' })
+      setStatus({ kind: 'success', message: 'Planilha recarregada e estrutura conferida.' })
     } catch (error) { setStatus({ kind: 'error', message: error.message }) }
     finally { setLoading('') }
   }
@@ -282,9 +282,9 @@ function App() {
 
     <section className="hero compactHero"><div><p className="kicker">NOVO LANÇAMENTO</p><h2>Lance agora.<br /><em>Controle sempre.</em></h2><p className="lead">Registre receitas, despesas e lançamentos parcelados. Entradas ficam positivas; saídas, negativas.</p></div>
       <div className="heroActions"><button className="setupButton recurringNav" onClick={() => setView('recurring')}><span>Lançamentos recorrentes</span><small>Visualize, crie e edite recorrências</small></button>
-      <button className="setupButton" disabled={Boolean(loading)} onClick={reloadSettings}><span>{loading === 'configuracoes' ? 'Atualizando…' : 'Atualizar configurações'}</span><small>Recarrega carteiras e categorias da planilha</small></button></div></section>
+      <button className="setupButton" disabled={Boolean(loading)} onClick={reloadSpreadsheet}><span>{loading === 'planilha' ? 'Recarregando…' : 'Recarregar planilha'}</span><small>Confere as colunas e atualiza carteiras e categorias</small></button></div></section>
 
-    <section className="settingsStrip"><div><span>CARTEIRAS</span><strong>{settings.carteiras.length}</strong></div><div><span>CATEGORIAS</span><strong>{settings.categorias.length}</strong></div><p>Edite a aba “Configuracoes” no Google Sheets e toque em atualizar.</p></section>
+    <section className="settingsStrip"><div><span>CARTEIRAS</span><strong>{settings.carteiras.length}</strong></div><div><span>CATEGORIAS</span><strong>{settings.categorias.length}</strong></div><p>Edite a aba “Configuracoes” no Google Sheets e toque em recarregar.</p></section>
 
     <section className="panel"><div className="panelHeading"><div><span>01</span><h3>Dados do lançamento</h3></div><p>Todos os campos são obrigatórios.</p></div>
       <form className="launchForm" onSubmit={handleSubmit}>
