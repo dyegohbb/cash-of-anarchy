@@ -73,10 +73,12 @@ Não crie nem coloque um Client Secret no frontend. Este fluxo usa apenas o Clie
 A aplicação cria duas colunas:
 
 ```text
-Carteiras | Categorias
+Carteiras | Tipo da carteira | Dia de fechamento | Dia de vencimento | Categorias
 ```
 
-Edite as linhas dessa aba para controlar as opções do formulário. Depois, use **Sync configuração** no dashboard. Carteiras e categorias não ficam hardcoded no navegador.
+Em `Tipo da carteira`, use `Conta` para as fontes de dinheiro e `Cartão` para cartões de crédito. Para cartões, informe fechamento e vencimento com números de 1 a 31. O sistema usa a data da compra e o fechamento para calcular automaticamente a competência da fatura. A inicialização migra o formato antigo: `Dinheiro` vira conta e as demais carteiras viram cartões; revise essa classificação uma vez e use **Sync configuração**.
+
+O pagamento de cartão cria duas linhas vinculadas: uma saída na conta escolhida e uma entrada no cartão. Recorrências ativas ainda não efetivadas aparecem como agendadas no extrato e entram nos saldos; ao efetivar, o usuário informa a data e o valor real e a previsão é substituída pela linha gravada.
 
 ### Aba Lancamentos
 

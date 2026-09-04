@@ -3,6 +3,7 @@ import { callApi, clearAuthToken, consumeAuthError, getAuthToken, isApiConfigure
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID?.trim() || ''
 const USER_KEY = 'cash-of-anarchy:google-user'
+const VALUES_VISIBLE_KEY = 'cash-of-anarchy:values-visible'
 let googleIdentityInitialized = false
 let googleCredentialCallback = null
 
@@ -80,6 +81,14 @@ function addMonthsToInput(value, amount) {
 
 function compareMonthInputs(left, right) {
   return String(left).localeCompare(String(right))
+}
+
+function cardCompetence(dateValue, closingDay) {
+  const [year, month, day] = String(dateValue || '').split('-').map(Number)
+  if (!year || !month || !day) return localMonthValue()
+  const offset = day > (Number(closingDay) || 25) ? 2 : 1
+  const date = new Date(year, month - 1 + offset, 1)
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
 }
 
 function OperationModal({ operation, onClose }) {
@@ -454,14 +463,50 @@ function ProjectionScreen({ settings, onBack }) {
   </main>
 }
 
-function DashboardScreen({ user, onNavigate, onSettingsUpdate, onSignOut }) {
+function HomeScreen({ user, onNavigate, onSignOut }) {
+  return <main className="shell homeShell">
+    <header className="brand dashboardBrand"><span className="brandMark">C$</span><div><p className="eyebrow">CENTRAL FINANCEIRA</p><h1>Cash Of Anarchy</h1></div><button className="accountButton" onClick={onSignOut}><span>{user.email}</span><strong>Sair</strong></button></header>
+    <section className="dashboardIntro homeIntro"><div><p className="kicker">INÍCIO</p><h2>O que vamos<br/><em>fazer agora?</em></h2><p className="lead">O dashboard só busca os dados financeiros quando você pedir.</p></div></section>
+    <nav className="homeActions">
+      <button className="primaryAction" onClick={() => onNavigate('dashboard')}><span>▦</span><strong>Carregar dashboard</strong><small>Visão completa, extrato e horizonte</small></button>
+      <button onClick={() => onNavigate('launch')}><span>＋</span><strong>Novo lançamento</strong><small>Entrada, saída ou parcelas</small></button>
+      <button onClick={() => onNavigate('cards')}><span>▣</span><strong>Cartões</strong><small>Consultar e pagar faturas</small></button>
+      <button onClick={() => onNavigate('recurring')}><span>↻</span><strong>Recorrências</strong><small>Obrigações mensais</small></button>
+      <button onClick={() => onNavigate('projection')}><span>◫</span><strong>Projeção</strong><small>Simular sem salvar</small></button>
+    </nav>
+  </main>
+}
+
+function CardsScreen({ settings, onBack }) {
+  const [form, setForm] = useState({ cartao: settings.cartoes?.[0]?.nome || '', carteira: settings.contas?.[0] || '', valor: '', competencia: localMonthValue(), dataPagamento: localDateValue() })
+  const [operation, setOperation] = useState(CLOSED_OPERATION)
+  async function submit(event) {
+    event.preventDefault(); setOperation({ open: true, status: 'loading', title: 'Pagando cartão', message: 'Criando a saída na conta e a entrada no cartão…', detail: '', current: 0, total: 0 })
+    try { const result = await callApi({ action: 'pagarCartao', ...form, valor: Number(form.valor), competencia: toCompetence(form.competencia) }); setOperation({ open: true, status: 'success', title: 'Fatura paga', message: result.message, detail: 'As duas movimentações usam o mesmo identificador.', current: 0, total: 0 }); setForm((current) => ({ ...current, valor: '' })) }
+    catch (error) { setOperation({ open: true, status: 'error', title: 'Não foi possível pagar', message: error.message, detail: '', current: 0, total: 0 }) }
+  }
+  return <main className="shell"><header className="brand"><button className="backButton" onClick={onBack}>←</button><div><p className="eyebrow">CARTÕES</p><h1>Pagamento de fatura</h1></div></header>
+    <section className="hero compactHero"><div><p className="kicker">TRANSFERÊNCIA</p><h2>Quite a fatura.<br/><em>Acerte os saldos.</em></h2><p className="lead">O valor sai de uma conta e entra no cartão, zerando a dívida sem inventar renda.</p></div></section>
+    <section className="panel"><form className="launchForm" onSubmit={submit}>
+      <label>Cartão<select required value={form.cartao} onChange={(e) => setForm({...form, cartao:e.target.value})}>{(settings.cartoes || []).map((item) => <option key={item.nome}>{item.nome}</option>)}</select></label>
+      <label>Conta de origem<select required value={form.carteira} onChange={(e) => setForm({...form, carteira:e.target.value})}>{(settings.contas || []).map((item) => <option key={item}>{item}</option>)}</select></label>
+      <label>Valor pago (R$)<input required min="0.01" step="0.01" type="number" inputMode="decimal" value={form.valor} onChange={(e) => setForm({...form, valor:e.target.value})}/></label>
+      <label>Data do pagamento<input required type="date" value={form.dataPagamento} onChange={(e) => setForm({...form, dataPagamento:e.target.value})}/></label>
+      <label>Competência da fatura<input required type="month" value={form.competencia} onChange={(e) => setForm({...form, competencia:e.target.value})}/></label>
+      <button className="submitButton fieldFull" disabled={!settings.cartoes?.length || !settings.contas?.length}>Confirmar pagamento <span>→</span></button>
+    </form>{!settings.cartoes?.length && <div className="notice error">Configure ao menos uma linha como “Cartão” na aba Configuracoes.</div>}</section>
+    <OperationModal operation={operation} onClose={() => setOperation(CLOSED_OPERATION)}/>
+  </main>
+}
+
+function DashboardScreen({ user, onNavigate, onSettingsUpdate, onSignOut, valuesVisible, onToggleValues }) {
   const [competence, setCompetence] = useState(localMonthValue)
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState('dashboard')
   const [loadingContext, setLoadingContext] = useState('initial')
   const [message, setMessage] = useState({ kind: '', text: '' })
   const [extractFilters, setExtractFilters] = useState({ description: '', category: '', wallet: '' })
-  const [valuesVisible, setValuesVisible] = useState(false)
+  const [effecting, setEffecting] = useState(null)
 
   async function loadDashboard(selectedCompetence = competence, clearMessage = true, context = loadingContext) {
     setLoadingContext(context)
@@ -520,19 +565,28 @@ function DashboardScreen({ user, onNavigate, onSettingsUpdate, onSignOut }) {
   const walletTotal = position.netPosition
   const money = (value) => valuesVisible ? formatMoney(value) : 'R$ ••••'
 
+  async function confirmRecurring(event) {
+    event.preventDefault()
+    try { await callApi({ action: 'efetivarRecorrente', recurringId: effecting.recurringId, competencia: effecting.competence, dataLancamento: effecting.date, valor: Number(effecting.amount) }); setEffecting(null); await loadDashboard(competence, false, 'sync') }
+    catch (error) { setMessage({ kind: 'error', text: error.message }) }
+  }
+
   return <main className={`shell dashboardShell ${valuesVisible ? '' : 'valuesMasked'}`}>
     <header className="brand dashboardBrand"><span className="brandMark" aria-hidden="true">C$</span><div><p className="eyebrow">CENTRAL FINANCEIRA</p><h1>Cash Of Anarchy</h1></div><button className="accountButton" onClick={onSignOut} aria-label={`Sair da conta ${user.email}`}><span>{user.email}</span><strong>Sair</strong></button></header>
-    <div className="privacyToolbar"><button type="button" className="privacyButton" aria-pressed={valuesVisible} aria-label={valuesVisible ? 'Ocultar todos os valores' : 'Exibir todos os valores'} title={valuesVisible ? 'Ocultar valores' : 'Exibir valores'} onClick={() => setValuesVisible((visible) => !visible)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="3"/>{!valuesVisible && <path className="privacySlash" d="M4 4 20 20"/>}</svg><span>{valuesVisible ? 'Valores visíveis' : 'Valores ocultos'}</span></button></div>
+    <div className="privacyToolbar"><button type="button" className="privacyButton" aria-pressed={valuesVisible} onClick={onToggleValues}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="3"/>{!valuesVisible && <path className="privacySlash" d="M4 4 20 20"/>}</svg><span>{valuesVisible ? 'Valores visíveis' : 'Valores ocultos'}</span></button></div>
 
     <section className="dashboardIntro"><div><p className="kicker">VISÃO GERAL</p><h2>Seu dinheiro.<br /><em>Sem neblina.</em></h2></div><label className="dashboardMonth">Mês analisado<input type="month" value={competence} disabled={loading === 'dashboard' || loading === 'planilha'} onChange={(event) => { setLoadingContext('month'); setCompetence(event.target.value) }} /></label></section>
 
     <nav className="dashboardActions" aria-label="Ações principais">
       <button className="primaryAction" onClick={() => onNavigate('launch')}><span>＋</span><strong>Novo lançamento</strong><small>Entrada, saída ou parcela</small></button>
       <button className="projectionAction" onClick={() => onNavigate('projection')}><span>◫</span><strong>Nova projeção</strong><small>Simule uma compra sem salvar</small></button>
+      <button onClick={() => onNavigate('cards')}><span>▣</span><strong>Cartões</strong><small>Pagar fatura</small></button>
       <button onClick={() => onNavigate('recurring')}><span>↻</span><strong>Recorrências</strong><small>Regras e processamento mensal</small></button>
       <button disabled={Boolean(loading)} onClick={syncSpreadsheet}><span>⇅</span><strong>{loading === 'planilha' ? 'Sincronizando…' : 'Sync planilha'}</strong><small>Estrutura e lançamentos</small></button>
       <button disabled={Boolean(loading)} onClick={syncSettings}><span>⚙</span><strong>{loading === 'configuracoes' ? 'Sincronizando…' : 'Sync configuração'}</strong><small>Carteiras e categorias</small></button>
     </nav>
+
+    {data?.totalRecorrenciasPendentes > 0 && <div className="pendingAlert" role="status"><strong>{data.totalRecorrenciasPendentes} recorrência(s) pendente(s) nesta competência</strong><span>Elas já entram nos cálculos. Efetive cada uma pelo extrato quando souber a data e o valor real.</span></div>}
 
     {message.text && <div className={`notice dashboardNotice ${message.kind}`} role="status">{message.text}</div>}
     <SheetLoadingOverlay visible={loading === 'dashboard' || loading === 'planilha'} context={loadingContext} competence={competence} />
@@ -548,8 +602,7 @@ function DashboardScreen({ user, onNavigate, onSettingsUpdate, onSignOut }) {
         <div className="monthTimeline">{(data?.planejamento || []).length ? data.planejamento.map((month) => <article key={month.competence} className={month.netPosition < 0 ? 'monthNegative' : ''}><span>{formatCompetenceLabel(month.competence)}</span><strong className={month.cashBalance < 0 ? 'negativeText' : 'positiveText'}>{money(month.cashBalance)}</strong><small>Dinheiro disponível · cartões {money(month.cardDebt)}</small><div><i style={{ width: `${Math.min(100, month.cardDebt ? (month.cardDebt / Math.max(1, month.cashBalance)) * 100 : 0)}%` }} /></div><p className={month.netPosition < 0 ? 'negativeText' : 'positiveText'}>Posição líquida {money(month.netPosition)}</p></article>) : <div className="dashboardEmpty">Nenhum lançamento futuro encontrado.</div>}</div>
       </section>
 
-      <div className="dashboardColumns"><section className="dashboardSection"><div className="sectionTitle"><div><span>MICRO</span><h3>Para onde vai</h3></div><p>Saídas do mês por categoria.</p></div><div className="breakdownList">{categories.length ? <>{categories.map((item) => <div key={item.name}><div><span>{item.name}</span><strong>{money(item.expenses)}</strong></div><i><b style={{ width: `${(item.expenses / biggestCategory) * 100}%` }} /></i></div>)}<div className="listTotal"><span>Total das saídas</span><strong className="negativeText">{money(categoryTotal)}</strong></div></> : <div className="dashboardEmpty">Sem despesas nesta competência.</div>}</div></section>
-        <section className="dashboardSection"><div className="sectionTitle"><div><span>CARTEIRAS</span><h3>Posição por conta</h3></div><p>Dinheiro é caixa; as demais carteiras são cartões.</p></div><div className="walletList">{walletBalances.length ? <>{walletBalances.map((item) => <div key={item.name}><span>{item.name}</span><strong className={item.balance < 0 ? 'negativeText' : 'positiveText'}>{money(item.balance)}</strong><small>{item.name.trim().toLocaleLowerCase('pt-BR') === 'dinheiro' ? 'Saldo disponível acumulado' : item.balance < 0 ? 'Fatura acumulada' : 'Crédito no cartão'}</small></div>)}<div className="walletTotal"><span>Posição líquida</span><strong className={walletTotal < 0 ? 'negativeText' : 'positiveText'}>{money(walletTotal)}</strong></div></> : <div className="dashboardEmpty">Sem movimentação por carteira.</div>}</div></section></div>
+      <section className="dashboardSection"><div className="sectionTitle"><div><span>CONTAS E CARTÕES</span><h3>Posição por carteira</h3></div><p>Classificação lida da aba Configuracoes.</p></div><div className="walletList">{walletBalances.length ? <>{walletBalances.map((item) => <div key={item.name}><span>{item.name}</span><strong className={item.balance < 0 ? 'negativeText' : 'positiveText'}>{money(item.balance)}</strong><small>{item.balance < 0 ? 'Saldo devedor acumulado' : 'Saldo positivo acumulado'}</small></div>)}<div className="walletTotal"><span>Posição líquida</span><strong className={walletTotal < 0 ? 'negativeText' : 'positiveText'}>{money(walletTotal)}</strong></div></> : <div className="dashboardEmpty">Sem movimentação por carteira.</div>}</div></section>
 
       <div className="dashboardDetailGrid"><section className="dashboardSection"><div className="sectionTitle"><div><span>PARCELAS DO MÊS</span><h3>Pagamentos parcelados</h3></div><p>Parcela atual e valor total da compra.</p></div><div className="futureTable installmentTable">{installmentPayments.length ? <>{installmentPayments.map((item) => <article key={item.id || `${item.groupId}-${item.installment}`}><div><span>{item.category}</span><strong>{item.description}</strong><small>{item.wallet} · Parcela {item.installment}/{item.installmentCount} · Compra total: {money(item.purchaseTotal)}</small></div><b className={item.value < 0 ? 'negativeText' : 'positiveText'}>{money(item.value)}</b></article>)}<div className="listTotal"><span>Somatório das parcelas do mês</span><strong className={installmentTotal < 0 ? 'negativeText' : 'positiveText'}>{money(installmentTotal)}</strong></div></> : <div className="dashboardEmpty">Nenhum pagamento parcelado nesta competência.</div>}</div></section>
 
@@ -559,8 +612,10 @@ function DashboardScreen({ user, onNavigate, onSettingsUpdate, onSignOut }) {
           <label>Categoria<select value={extractFilters.category} onChange={(event) => setExtractFilters((current) => ({ ...current, category: event.target.value }))}><option value="">Todas</option>{availableCategories.map((category) => <option key={category} value={category}>{category}</option>)}</select></label>
           <label>Carteira<select value={extractFilters.wallet} onChange={(event) => setExtractFilters((current) => ({ ...current, wallet: event.target.value }))}><option value="">Todas</option>{availableWallets.map((wallet) => <option key={wallet} value={wallet}>{wallet}</option>)}</select></label>
         </div>
-        <div className="futureTable currentLaunches">{filteredLaunches.length ? <>{filteredLaunches.map((item) => <article key={item.id || `${item.description}-${item.value}`}><div><span>{item.category}</span><strong>{item.description}</strong><small>{item.wallet}{item.installmentCount > 1 ? ` · Parcela ${item.installment}/${item.installmentCount}` : ''}</small></div><b className={item.value < 0 ? 'negativeText' : 'positiveText'}>{money(item.value)}</b></article>)}<div className="listTotal"><span>Total do extrato filtrado · {filteredLaunches.length} registro(s)</span><strong className={extractTotal < 0 ? 'negativeText' : 'positiveText'}>{money(extractTotal)}</strong></div></> : <div className="dashboardEmpty">Nenhum lançamento encontrado com esses filtros.</div>}</div></section></div>
+        <div className="futureTable currentLaunches">{filteredLaunches.length ? <>{filteredLaunches.map((item) => <article className={item.pending ? 'pendingLaunch' : ''} key={item.id || `${item.description}-${item.value}`}><div><span>{item.pending ? 'AGENDADO · ' : ''}{item.category}</span><strong>{item.description}</strong><small>{item.wallet}{item.installmentCount > 1 ? ` · Parcela ${item.installment}/${item.installmentCount}` : ''}</small></div><b className={item.value < 0 ? 'negativeText' : 'positiveText'}>{money(item.value)}</b>{item.pending && <button className="effectButton" onClick={() => setEffecting({ ...item, date: localDateValue(), amount: String(Math.abs(item.value)) })}>Efetivar</button>}</article>)}<div className="listTotal"><span>Total do extrato filtrado · {filteredLaunches.length} registro(s)</span><strong className={extractTotal < 0 ? 'negativeText' : 'positiveText'}>{money(extractTotal)}</strong></div></> : <div className="dashboardEmpty">Nenhum lançamento encontrado com esses filtros.</div>}</div></section></div>
+      <section className="dashboardSection categoriesAfterExtract"><div className="sectionTitle"><div><span>CATEGORIAS</span><h3>Para onde vai</h3></div><p>Saídas do mês por categoria.</p></div><div className="breakdownList">{categories.length ? <>{categories.map((item) => <div key={item.name}><div><span>{item.name}</span><strong>{money(item.expenses)}</strong></div><i><b style={{ width: `${(item.expenses / biggestCategory) * 100}%` }} /></i></div>)}<div className="listTotal"><span>Total das saídas</span><strong className="negativeText">{money(categoryTotal)}</strong></div></> : <div className="dashboardEmpty">Sem despesas nesta competência.</div>}</div></section>
     </>}
+    {effecting && <div className="operationOverlay"><section className="operationModal"><p className="kicker">EFETIVAR RECORRÊNCIA</p><h3>{effecting.description}</h3><form className="effectForm" onSubmit={confirmRecurring}><label>Data real<input required type="date" value={effecting.date} onChange={(e) => setEffecting({...effecting, date:e.target.value})}/></label><label>Valor real (R$)<input required min="0.01" step="0.01" type="number" inputMode="decimal" value={effecting.amount} onChange={(e) => setEffecting({...effecting, amount:e.target.value})}/></label><div><button type="button" className="cancelButton" onClick={() => setEffecting(null)}>Cancelar</button><button className="submitButton">Efetivar <span>→</span></button></div></form></section></div>}
     <footer><span>DASHBOARD FINANCEIRO</span><p>Dados lidos diretamente do Google Sheets.</p><span>V0.6</span></footer>
   </main>
 }
@@ -568,12 +623,13 @@ function DashboardScreen({ user, onNavigate, onSettingsUpdate, onSignOut }) {
 function App() {
   const [user, setUser] = useState(storedGoogleUser)
   const [form, setForm] = useState(createInitialForm)
-  const [settings, setSettings] = useState({ carteiras: [], categorias: [] })
+  const [settings, setSettings] = useState({ carteiras: [], contas: [], cartoes: [], categorias: [] })
   const [settingsLoaded, setSettingsLoaded] = useState(false)
   const [status, setStatus] = useState({ kind: '', message: '' })
   const [loading, setLoading] = useState('')
   const [operation, setOperation] = useState(CLOSED_OPERATION)
-  const [view, setView] = useState('dashboard')
+  const [view, setView] = useState('home')
+  const [valuesVisible, setValuesVisible] = useState(() => sessionStorage.getItem(VALUES_VISIBLE_KEY) === 'true')
   const configured = isApiConfigured()
   const isInstallment = form.tipoPagamento === 'Parcelado'
 
@@ -617,10 +673,11 @@ function App() {
     setSettings(result.configuracoes || { carteiras: [], categorias: [] })
     setSettingsLoaded(true)
     setStatus({ kind: 'success', message: result.message })
+    sessionStorage.setItem(VALUES_VISIBLE_KEY, 'false'); setValuesVisible(false); setView('home')
   }
 
   function signOut() {
-    clearAuthToken(); sessionStorage.removeItem(USER_KEY); setUser(null); setSettingsLoaded(false); setView('dashboard')
+    clearAuthToken(); sessionStorage.removeItem(USER_KEY); sessionStorage.removeItem(VALUES_VISIBLE_KEY); setValuesVisible(false); setUser(null); setSettingsLoaded(false); setView('home')
     window.google?.accounts?.id?.disableAutoSelect()
   }
 
@@ -643,12 +700,14 @@ function App() {
   }
 
   if (!user) return <AccessGate onAccess={grantAccess} />
-  if (view === 'dashboard') return <DashboardScreen user={user} onSignOut={signOut} onNavigate={setView} onSettingsUpdate={(nextSettings) => { setSettings(nextSettings); setSettingsLoaded(true) }} />
-  if (view === 'recurring') return <RecurringScreen settings={settings} onBack={() => setView('dashboard')} />
-  if (view === 'projection') return <ProjectionScreen settings={settings} onBack={() => setView('dashboard')} />
+  if (view === 'home') return <HomeScreen user={user} onSignOut={signOut} onNavigate={setView}/>
+  if (view === 'dashboard') return <DashboardScreen user={user} onSignOut={signOut} onNavigate={setView} valuesVisible={valuesVisible} onToggleValues={() => setValuesVisible((visible) => { sessionStorage.setItem(VALUES_VISIBLE_KEY, String(!visible)); return !visible })} onSettingsUpdate={(nextSettings) => { setSettings(nextSettings); setSettingsLoaded(true) }} />
+  if (view === 'cards') return <CardsScreen settings={settings} onBack={() => setView('home')}/>
+  if (view === 'recurring') return <RecurringScreen settings={settings} onBack={() => setView('home')} />
+  if (view === 'projection') return <ProjectionScreen settings={settings} onBack={() => setView('home')} />
 
   return <main className="shell">
-    <header className="brand"><button className="backButton" onClick={() => setView('dashboard')} aria-label="Voltar ao dashboard">←</button><div><p className="eyebrow">NOVO LANÇAMENTO</p><h1>Cash Of Anarchy</h1></div>
+    <header className="brand"><button className="backButton" onClick={() => setView('home')} aria-label="Voltar ao início">←</button><div><p className="eyebrow">NOVO LANÇAMENTO</p><h1>Cash Of Anarchy</h1></div>
       <span className={`connection ${configured ? 'online' : ''}`}><i /> {configured ? 'Sheets conectado' : 'Modo demonstração'}</span></header>
 
     <section className="hero compactHero"><div><p className="kicker">NOVO LANÇAMENTO</p><h2>Lance agora.<br /><em>Controle sempre.</em></h2><p className="lead">Registre receitas, despesas e lançamentos parcelados. Entradas ficam positivas; saídas, negativas.</p></div>
@@ -661,9 +720,9 @@ function App() {
         <label className="fieldFull">Descrição<input required maxLength="100" autoCapitalize="sentences" enterKeyHint="next" placeholder="Ex.: Mercado do mês" value={form.descricao} onChange={(e) => setForm({ ...form, descricao: e.target.value })} /></label>
         <label>Movimento<select value={form.tipo} onChange={(e) => setForm({ ...form, tipo: e.target.value })}><option>Saída</option><option>Entrada</option></select></label>
         <label>Categoria<select required value={form.categoria} onChange={(e) => setForm({ ...form, categoria: e.target.value })}>{settings.categorias.map((item) => <option key={item}>{item}</option>)}</select></label>
-        <label>Carteira / origem<select required value={form.carteira} onChange={(e) => setForm({ ...form, carteira: e.target.value })}>{settings.carteiras.map((item) => <option key={item}>{item}</option>)}</select></label>
-        <label>Data do lançamento<input required type="date" value={form.dataLancamento} onChange={(e) => setForm({ ...form, dataLancamento: e.target.value })} /></label>
-        <label>Competência inicial<input required type="month" value={form.competencia} onChange={(e) => setForm({ ...form, competencia: e.target.value })} /><small className="fieldHint">Referência: {competenceReference(form.competencia)}</small></label>
+        <label>Conta ou cartão<select required value={form.carteira} onChange={(e) => { const wallet=e.target.value; const card=settings.cartoes?.find((item)=>item.nome===wallet); setForm({ ...form, carteira: wallet, competencia: card ? cardCompetence(form.dataLancamento, card.fechamento) : form.competencia }) }}>{settings.carteiras.map((item) => <option key={item}>{item}</option>)}</select></label>
+        <label>Data do lançamento<input required type="date" value={form.dataLancamento} onChange={(e) => { const card=settings.cartoes?.find((item)=>item.nome===form.carteira); setForm({ ...form, dataLancamento:e.target.value, competencia:card ? cardCompetence(e.target.value, card.fechamento) : form.competencia }) }} /></label>
+        <label>Competência inicial<input required type="month" value={form.competencia} disabled={Boolean(settings.cartoes?.some((item)=>item.nome===form.carteira))} onChange={(e) => setForm({ ...form, competencia: e.target.value })} /><small className="fieldHint">{settings.cartoes?.some((item)=>item.nome===form.carteira) ? 'Calculada pelo fechamento do cartão.' : `Referência: ${competenceReference(form.competencia)}`}</small></label>
         <label>Tipo de pagamento<select value={form.tipoPagamento} onChange={(e) => setForm({ ...form, tipoPagamento: e.target.value })}><option>À vista</option><option>Parcelado</option></select></label>
 
         {isInstallment && <fieldset className="fieldFull installmentOptions"><legend>Como deseja informar o valor?</legend>

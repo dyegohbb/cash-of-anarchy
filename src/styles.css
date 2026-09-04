@@ -55,6 +55,16 @@ h1 { margin: 0; font-size: 17px; letter-spacing: -.03em; }
 .accountButton span { width: 100%; overflow: hidden; color: #8b958c; font: 400 9px DM Mono; text-overflow: ellipsis; white-space: nowrap; }
 .accountButton strong { margin-top: 3px; color: #b7f22f; font-size: 10px; }
 .privacyToolbar { min-height: 49px; display: flex; align-items: center; justify-content: flex-end; }
+.homeActions { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 22px 0; }
+.homeActions button { min-height: 140px; display: grid; align-content: center; text-align: left; gap: 7px; padding: 22px; border: 1px solid #354037; background: #131814; color: #f1f4ec; }
+.homeActions button span { color: #b7f22f; font-size: 1.5rem; }.homeActions button strong { font-size: 1.05rem; }.homeActions button small { color: #819085; }
+.homeActions .primaryAction { background: #b7f22f; color: #0b0e09; }.homeActions .primaryAction span,.homeActions .primaryAction small { color: #0b0e09; }
+.pendingAlert { margin: 18px 0; padding: 16px 18px; border-left: 4px solid #b7f22f; background: rgba(183,242,47,.08); display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 18px; }
+.pendingAlert span { color: #819085; }
+.pendingLaunch { border-left: 3px solid #b7f22f !important; }
+.effectButton { border: 1px solid #b7f22f; color: #b7f22f; background: transparent; padding: 8px 12px; }
+.effectForm { display: grid; gap: 14px; margin-top: 18px; }.effectForm label { display: grid; gap: 7px; }.effectForm > div { display: flex; gap: 10px; justify-content: flex-end; }.effectForm .submitButton { width: auto; }
+.categoriesAfterExtract { margin-top: 22px; }
 .privacyButton { min-height: 30px; padding: 4px 8px; display: flex; align-items: center; gap: 6px; border: 1px solid #394139; border-radius: 6px; background: #101411; color: #aab4aa; }
 .privacyButton svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .privacyButton .privacySlash { stroke: #ff746c; stroke-width: 2.2; }

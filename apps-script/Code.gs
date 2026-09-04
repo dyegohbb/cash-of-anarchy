@@ -7,7 +7,7 @@ const CONFIG = Object.freeze({
     'Total de parcelas', 'Data do lançamento', 'Tipo de pagamento', 'Categoria',
     'groupId', 'ID', 'recurringId', 'Origem', 'Data de inserção',
   ],
-  SETTINGS_HEADERS: ['Carteiras', 'Categorias'],
+  SETTINGS_HEADERS: ['Carteiras', 'Tipo da carteira', 'Dia de fechamento', 'Dia de vencimento', 'Categorias'],
   RECURRING_HEADERS: [
     'recurringId', 'Descrição', 'Valor', 'Tipo', 'Categoria', 'Carteira',
     'Data de início', 'Competência inicial', 'Periodicidade', 'Status',
@@ -53,6 +53,8 @@ function doPost(event) {
     if (payload.action === 'atualizarRecorrente') return updateRecurring(payload);
     if (payload.action === 'processarRecorrentes') return processRecurring(payload.competencia);
     if (payload.action === 'removerLancamentosRecorrentes') return removeRecurringLaunches(payload.competencia);
+    if (payload.action === 'efetivarRecorrente') return effectRecurring(payload);
+    if (payload.action === 'pagarCartao') return payCreditCard(payload);
     return jsonResponse({ ok: false, error: 'Ação não permitida.' });
   } catch (error) {
     console.error(error);
@@ -184,7 +186,16 @@ function getDashboardResponse(rawCompetence) {
   if (!competence) throw new Error('Informe uma competência válida no formato MM/AAAA.');
   const sheet = getOrCreateSheet(getSpreadsheet(), CONFIG.LAUNCHES_SHEET);
   const headerMap = ensureLaunchHeaders(sheet);
-  const launches = readDashboardLaunches(sheet, headerMap);
+  const actualLaunches = readDashboardLaunches(sheet, headerMap);
+  const recurringSheet = getOrCreateSheet(getSpreadsheet(), CONFIG.RECURRING_SHEET);
+  const recurringMap = ensureHeaders(recurringSheet, CONFIG.RECURRING_HEADERS);
+  const rules = readRecurringRowsRaw(recurringSheet, recurringMap);
+  const pending = buildPendingRecurring(rules, actualLaunches, addMonthsToCompetence(competence, 17));
+  const launches = actualLaunches.concat(pending);
+  const settingsSheet = getOrCreateSheet(getSpreadsheet(), CONFIG.SETTINGS_SHEET);
+  initializeSettingsSheet(settingsSheet);
+  const accountNames = new Set(readSettings(settingsSheet).contas);
+  launches.forEach((item) => { item.walletType = accountNames.has(item.wallet) ? 'Conta' : 'Cartão'; });
   const purchaseTotals = launches.reduce((totals, item) => {
     if (item.groupId && item.installmentCount > 1) totals[item.groupId] = (totals[item.groupId] || 0) + Math.abs(item.value);
     return totals;
@@ -232,6 +243,8 @@ function getDashboardResponse(rawCompetence) {
     carteiras: wallets,
     saldosCarteiras: groupDashboardValues(accumulated, 'wallet', false),
     lancamentos: selected.sort((left, right) => Math.abs(right.value) - Math.abs(left.value)),
+    recorrenciasPendentes: pending.filter((item) => item.competence === competence),
+    totalRecorrenciasPendentes: pending.filter((item) => item.competence === competence).length,
     dividasFuturas: upcomingDebts,
     totalDividasFuturas: future.filter((item) => item.value < 0).reduce((total, item) => total + Math.abs(item.value), 0),
   });
@@ -264,7 +277,23 @@ function summarizeLaunches(items) {
 }
 
 function isCashLaunch(item) {
-  return String(item.wallet || '').trim().toLowerCase() === 'dinheiro';
+  return item.walletType === 'Conta' || (!item.walletType && String(item.wallet || '').trim().toLowerCase() === 'dinheiro');
+}
+
+function buildPendingRecurring(rules, launches, lastCompetence) {
+  const existing = new Set(launches.filter((item) => item.recurringId).map((item) => `${item.recurringId}|${item.competence}`));
+  const result = [];
+  rules.filter((rule) => rule.status === 'Ativa' && rule.periodicity === 'Mensal' && rule.initialCompetence).forEach((rule) => {
+    for (let month = rule.initialCompetence, guard = 0; compareCompetences(month, lastCompetence) <= 0 && guard < 240; month = addMonthsToCompetence(month, 1), guard += 1) {
+      if (existing.has(`${rule.recurringId}|${month}`)) continue;
+      result.push({ id: `pending:${rule.recurringId}:${month}`, groupId: '', recurringId: rule.recurringId,
+        description: rule.description, value: rule.value, movementType: rule.movementType,
+        category: rule.category || 'Sem categoria', wallet: rule.wallet || 'Sem carteira', paymentType: 'Recorrente',
+        installment: 1, installmentCount: 1, competence: month, launchDate: '', origin: 'Recorrência prevista',
+        purchaseTotal: Math.abs(rule.value), pending: true });
+    }
+  });
+  return result;
 }
 
 function summarizeFinancialPosition(items) {
@@ -460,6 +489,53 @@ function removeRecurringLaunches(rawCompetence) {
   });
 }
 
+function effectRecurring(payload) {
+  const recurringId = sanitizeText(payload.recurringId, 100);
+  const competence = normalizeCompetence(payload.competencia);
+  const launchDate = normalizeDate(payload.dataLancamento);
+  const inputValue = Number(payload.valor);
+  if (!recurringId || !competence || !launchDate || !Number.isFinite(inputValue) || inputValue === 0) throw new Error('Informe recorrência, competência, data e valor válidos.');
+  const spreadsheet = getSpreadsheet();
+  const recurringSheet = getOrCreateSheet(spreadsheet, CONFIG.RECURRING_SHEET);
+  const recurringMap = ensureHeaders(recurringSheet, CONFIG.RECURRING_HEADERS);
+  const rule = readRecurringRowsRaw(recurringSheet, recurringMap).find((item) => item.recurringId === recurringId);
+  if (!rule || rule.status !== 'Ativa') throw new Error('Recorrência ativa não encontrada.');
+  const launches = getOrCreateSheet(spreadsheet, CONFIG.LAUNCHES_SHEET);
+  const launchMap = ensureLaunchHeaders(launches);
+  if (readRecurringLaunchKeys(launches, launchMap).has(`${recurringId}|${competence}`)) throw new Error('Esta recorrência já foi efetivada nessa competência.');
+  const value = normalizeSignedValue(inputValue, rule.movementType);
+  const row = buildLaunchRow(launchMap, { id: Utilities.getUuid(), groupId: Utilities.getUuid(), recurringId,
+    description: rule.description, value, movementType: rule.movementType, category: rule.category, wallet: rule.wallet,
+    paymentType: 'À vista', installmentNumber: 1, installmentCount: 1, competence, launchDate, insertedAt: new Date() });
+  launches.getRange(launches.getLastRow() + 1, 1, 1, launchMap.headers.length).setValues([row]);
+  return jsonResponse({ ok: true, message: 'Lançamento recorrente efetivado com sucesso.' });
+}
+
+function payCreditCard(payload) {
+  const card = sanitizeText(payload.cartao, 60);
+  const account = sanitizeText(payload.carteira, 60);
+  const competence = normalizeCompetence(payload.competencia);
+  const launchDate = normalizeDate(payload.dataPagamento);
+  const amount = Math.abs(Number(payload.valor));
+  const spreadsheet = getSpreadsheet();
+  const settingsSheet = getOrCreateSheet(spreadsheet, CONFIG.SETTINGS_SHEET);
+  initializeSettingsSheet(settingsSheet);
+  const settings = readSettings(settingsSheet);
+  if (!settings.cartoes.some((item) => item.nome === card)) throw new Error('Selecione um cartão configurado.');
+  if (!settings.contas.includes(account)) throw new Error('Selecione uma conta de origem configurada.');
+  if (!competence || !launchDate || !Number.isFinite(amount) || amount <= 0) throw new Error('Informe competência, data e valor válidos.');
+  const sheet = getOrCreateSheet(spreadsheet, CONFIG.LAUNCHES_SHEET);
+  const headerMap = ensureLaunchHeaders(sheet);
+  const groupId = Utilities.getUuid(); const now = new Date();
+  const common = { groupId, paymentType: 'À vista', installmentNumber: 1, installmentCount: 1, competence, launchDate, insertedAt: now, recurringId: '' };
+  const rows = [
+    buildLaunchRow(headerMap, { ...common, id: Utilities.getUuid(), description: `Pagamento ${card}`, value: -amount, movementType: 'Saída', category: 'Pagamento de cartão', wallet: account }),
+    buildLaunchRow(headerMap, { ...common, id: Utilities.getUuid(), description: `Pagamento ${card}`, value: amount, movementType: 'Entrada', category: 'Pagamento de cartão', wallet: card }),
+  ];
+  sheet.getRange(sheet.getLastRow() + 1, 1, 2, headerMap.headers.length).setValues(rows);
+  return jsonResponse({ ok: true, groupId, message: 'Pagamento do cartão lançado nas duas carteiras.' });
+}
+
 function validateRecurring(payload, settings) {
   const description = sanitizeText(payload.descricao, 100);
   const inputValue = Number(payload.valor);
@@ -545,8 +621,9 @@ function validateLaunch(payload, settings) {
   const paymentType = sanitizeText(payload.tipoPagamento, 20);
   const installmentMode = sanitizeText(payload.modoParcelamento || 'valorParcela', 20);
   const installmentCount = paymentType === 'Parcelado' ? Number(payload.parcelas) : 1;
-  const competence = normalizeCompetence(payload.competencia);
   const launchDate = normalizeDate(payload.dataLancamento || payload.dataCompra);
+  const card = settings.cartoes.find((item) => item.nome === wallet);
+  const competence = card ? calculateCardCompetence(launchDate, card.fechamento) : normalizeCompetence(payload.competencia);
 
   if (!description) throw new Error('Informe a descrição.');
   if (!Number.isFinite(inputValue) || inputValue === 0 || Math.abs(inputValue) > 100000000) throw new Error('Informe um valor válido.');
@@ -563,6 +640,15 @@ function validateLaunch(payload, settings) {
 
   const value = normalizeSignedValue(inputValue, movementType);
   return { description, value, movementType, category, wallet, paymentType, installmentMode, installmentCount, competence, launchDate };
+}
+
+function calculateCardCompetence(launchDate, closingDay) {
+  if (!launchDate) return '';
+  const date = launchDate instanceof Date ? launchDate : new Date(`${launchDate}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return '';
+  const close = Number(closingDay) || 31;
+  const offset = date.getDate() > close ? 2 : 1;
+  return Utilities.formatDate(new Date(date.getFullYear(), date.getMonth() + offset, 1), Session.getScriptTimeZone(), 'MM/yyyy');
 }
 
 function createInstallments(launch) {
@@ -711,20 +797,31 @@ function migrateLegacyColumn(sheet, legacyHeader, currentHeader) {
 function initializeSettingsSheet(sheet) {
   if (sheet.getLastRow() === 0) {
     const rowCount = Math.max(CONFIG.DEFAULT_WALLETS.length, CONFIG.DEFAULT_CATEGORIES.length);
-    const rows = Array.from({ length: rowCount }, (_, index) => [CONFIG.DEFAULT_WALLETS[index] || '', CONFIG.DEFAULT_CATEGORIES[index] || '']);
-    sheet.getRange(1, 1, 1, 2).setValues([CONFIG.SETTINGS_HEADERS]).setFontWeight('bold').setBackground('#b7f22f').setFontColor('#11160d');
-    sheet.getRange(2, 1, rows.length, 2).setValues(rows);
+    const rows = Array.from({ length: rowCount }, (_, index) => [CONFIG.DEFAULT_WALLETS[index] || '', index === 0 ? 'Conta' : 'Cartão', index ? 25 : '', index ? 5 : '', CONFIG.DEFAULT_CATEGORIES[index] || '']);
+    sheet.getRange(1, 1, 1, CONFIG.SETTINGS_HEADERS.length).setValues([CONFIG.SETTINGS_HEADERS]).setFontWeight('bold').setBackground('#b7f22f').setFontColor('#11160d');
+    sheet.getRange(2, 1, rows.length, CONFIG.SETTINGS_HEADERS.length).setValues(rows);
     sheet.setFrozenRows(1);
-    sheet.autoResizeColumns(1, 2);
+    sheet.autoResizeColumns(1, CONFIG.SETTINGS_HEADERS.length);
+    return;
+  }
+  const oldHeaders = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getDisplayValues()[0];
+  if (oldHeaders.length === 2 && oldHeaders[0] === 'Carteiras' && oldHeaders[1] === 'Categorias') {
+    const oldRows = sheet.getLastRow() > 1 ? sheet.getRange(2, 1, sheet.getLastRow() - 1, 2).getDisplayValues() : [];
+    sheet.clear();
+    sheet.getRange(1, 1, 1, CONFIG.SETTINGS_HEADERS.length).setValues([CONFIG.SETTINGS_HEADERS]).setFontWeight('bold').setBackground('#b7f22f').setFontColor('#11160d');
+    if (oldRows.length) sheet.getRange(2, 1, oldRows.length, CONFIG.SETTINGS_HEADERS.length).setValues(oldRows.map((row) => [row[0], String(row[0]).trim().toLowerCase() === 'dinheiro' ? 'Conta' : 'Cartão', '', '', row[1]]));
   }
 }
 
 function readSettings(sheet) {
-  if (sheet.getLastRow() < 2) return { carteiras: [], categorias: [] };
-  const values = sheet.getRange(2, 1, sheet.getLastRow() - 1, 2).getDisplayValues();
+  if (sheet.getLastRow() < 2) return { carteiras: [], contas: [], cartoes: [], categorias: [] };
+  const values = sheet.getRange(2, 1, sheet.getLastRow() - 1, CONFIG.SETTINGS_HEADERS.length).getDisplayValues();
+  const wallets = uniqueNonEmpty(values.map((row) => row[0]));
   return {
-    carteiras: uniqueNonEmpty(values.map((row) => row[0])),
-    categorias: uniqueNonEmpty(values.map((row) => row[1])),
+    carteiras: wallets,
+    contas: uniqueNonEmpty(values.filter((row) => String(row[1]).trim().toLowerCase() !== 'cartão' && String(row[1]).trim().toLowerCase() !== 'cartao').map((row) => row[0])),
+    cartoes: values.filter((row) => row[0] && ['cartão', 'cartao'].includes(String(row[1]).trim().toLowerCase())).map((row) => ({ nome: row[0], fechamento: Number(row[2]) || 25, vencimento: Number(row[3]) || 5 })),
+    categorias: uniqueNonEmpty(values.map((row) => row[4])),
   };
 }
 
