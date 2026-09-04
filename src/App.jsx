@@ -57,21 +57,6 @@ function formatMonthInput(value) {
   return new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(new Date(year, month - 1, 1))
 }
 
-function competenceRange(start, end) {
-  const [startYear, startMonth] = String(start || '').split('-').map(Number)
-  const [endYear, endMonth] = String(end || '').split('-').map(Number)
-  if (!startYear || !startMonth || !endYear || !endMonth) return []
-  const first = (startYear * 12) + startMonth
-  const last = (endYear * 12) + endMonth
-  if (last < first || last - first > 35) return []
-  return Array.from({ length: last - first + 1 }, (_, index) => {
-    const absoluteMonth = first + index
-    const month = ((absoluteMonth - 1) % 12) + 1
-    const year = Math.floor((absoluteMonth - 1) / 12)
-    return `${year}-${String(month).padStart(2, '0')}`
-  })
-}
-
 function addMonthsToInput(value, amount) {
   const [year, month] = String(value || '').split('-').map(Number)
   if (!year || !month) return ''
@@ -219,9 +204,6 @@ function RecurringScreen({ settings, onBack }) {
   const [items, setItems] = useState([])
   const [mode, setMode] = useState('list')
   const [form, setForm] = useState(emptyForm)
-  const [processingCompetence, setProcessingCompetence] = useState(localMonthValue)
-  const [processingEndCompetence, setProcessingEndCompetence] = useState(localMonthValue)
-  const [removalCompetence, setRemovalCompetence] = useState(localMonthValue)
   const [loading, setLoading] = useState('listar')
   const [message, setMessage] = useState({ kind: '', text: '' })
   const [operation, setOperation] = useState(CLOSED_OPERATION)
@@ -269,48 +251,6 @@ function RecurringScreen({ settings, onBack }) {
     finally { setLoading('') }
   }
 
-  async function processCompetenceRange() {
-    const months = competenceRange(processingCompetence, processingEndCompetence)
-    if (!months.length) {
-      setOperation({ open: true, status: 'error', title: 'Período inválido', message: 'A competência final deve ser igual ou posterior à inicial.', detail: 'O período pode ter no máximo 36 meses.', current: 0, total: 0 })
-      return
-    }
-    setLoading('processar'); setMessage({ kind: '', text: '' })
-    let created = 0
-    try {
-      for (let index = 0; index < months.length; index += 1) {
-        const month = months[index]
-        setOperation({ open: true, status: 'loading', title: 'Processando recorrências', message: `Processando ${formatMonthInput(month)}`, detail: `${index + 1}/${months.length}`, current: index + 1, total: months.length })
-        const result = await callApi({ action: 'processarRecorrentes', competencia: toCompetence(month) })
-        created += Number(result.lancamentosCriados || 0)
-        setOperation((current) => ({ ...current, current: index + 1 }))
-      }
-      const resultMessage = `${months.length} competência(s) processada(s). ${created} lançamento(s) criado(s).`
-      setMessage({ kind: 'success', text: resultMessage })
-      setOperation({ open: true, status: 'success', title: 'Período processado', message: resultMessage, detail: `${formatMonthInput(months[0])} até ${formatMonthInput(months[months.length - 1])}`, current: months.length, total: months.length })
-    } catch (error) {
-      setMessage({ kind: 'error', text: error.message })
-      setOperation((current) => ({ ...current, status: 'error', title: 'Processamento interrompido', message: error.message, detail: `${current.current}/${months.length} competência(s) concluída(s)` }))
-    }
-    finally { setLoading('') }
-  }
-
-  async function removeCompetence() {
-    const competence = toCompetence(removalCompetence)
-    if (!window.confirm(`Remover os lançamentos recorrentes de ${competence}? As regras continuarão cadastradas.`)) return
-    setLoading('remover'); setMessage({ kind: '', text: '' })
-    setOperation({ open: true, status: 'loading', title: 'Removendo lançamentos', message: `Removendo ${formatMonthInput(removalCompetence)}`, detail: 'As regras de recorrência serão mantidas.', current: 0, total: 0 })
-    try {
-      const result = await callApi({ action: 'removerLancamentosRecorrentes', competencia: competence })
-      setMessage({ kind: 'success', text: result.message })
-      setOperation({ open: true, status: 'success', title: 'Remoção concluída', message: result.message, detail: `${formatMonthInput(removalCompetence)} foi processado.`, current: 0, total: 0 })
-    } catch (error) {
-      setMessage({ kind: 'error', text: error.message })
-      setOperation({ open: true, status: 'error', title: 'Erro ao remover lançamentos', message: error.message, detail: 'Nenhuma regra de recorrência foi removida.', current: 0, total: 0 })
-    }
-    finally { setLoading('') }
-  }
-
   async function deleteRule(item) {
     if (!window.confirm(`Excluir a recorrência “${item.descricao}”? Provisionamentos ainda não faturados também serão removidos.`)) return
     setLoading('excluir')
@@ -324,13 +264,6 @@ function RecurringScreen({ settings, onBack }) {
     <section className="recurringHero"><div><p className="kicker">RECORRÊNCIAS</p><h2>Todo mês.<br /><em>Sem esquecer.</em></h2></div>
       {mode === 'list' && <button className="submitButton newRecurring" onClick={openNew}>Nova recorrência <span>＋</span></button>}
     </section>
-
-    {mode === 'list' && <section className="recurringProcessor rangeProcessor">
-      <div className="processorIntro"><p className="kicker">GERAR LANÇAMENTOS</p><h3>Processar um período</h3><p>O frontend processa uma competência por vez, em ordem, usando a ação mensal existente.</p></div>
-      <div className="rangeFields"><label>Competência inicial<input required type="month" value={processingCompetence} disabled={Boolean(loading)} onChange={(event) => setProcessingCompetence(event.target.value)} /></label><label>Competência final<input required type="month" min={processingCompetence} value={processingEndCompetence} disabled={Boolean(loading)} onChange={(event) => setProcessingEndCompetence(event.target.value)} /></label></div>
-      <div className="recurringProcessorActions"><button className="submitButton" disabled={Boolean(loading) || !processingCompetence || !processingEndCompetence} onClick={processCompetenceRange}>{loading === 'processar' ? 'Processando período…' : 'Processar período'} <span>→</span></button></div>
-      <div className="removalProcessor"><label>Remover lançamentos de<input required type="month" value={removalCompetence} disabled={Boolean(loading)} onChange={(event) => setRemovalCompetence(event.target.value)} /></label><button className="dangerButton" disabled={Boolean(loading) || !removalCompetence} onClick={removeCompetence}>{loading === 'remover' ? 'Removendo…' : 'Remover lançamentos do mês'}</button></div>
-    </section>}
 
     {mode === 'list' ? <section className="recurringList" aria-busy={loading === 'listar'}>
       {loading === 'listar' && <div className="emptyState">Carregando recorrências…</div>}
@@ -413,7 +346,7 @@ function ProjectionScreen({ settings, onBack }) {
         const launches = dashboard.lancamentos || []
         const missingRecurring = recurringRules.filter((rule) => (
           compareMonthInputs(fromCompetence(rule.competenciaInicial), month) <= 0
-          && !launches.some((launch) => launch.recurringId && launch.recurringId === rule.recurringId)
+          && !launches.some((launch) => !launch.pending && launch.recurringId && launch.recurringId === rule.recurringId)
         ))
         const monthAdjustments = []
         missingRecurring.forEach((rule) => {
@@ -465,7 +398,7 @@ function ProjectionScreen({ settings, onBack }) {
         <button className="submitButton fieldFull" disabled={running || !settings.carteiras.length} type="submit">{running ? 'Calculando projeção…' : 'Calcular impacto'} <span>→</span></button>
       </form>
     </section>
-    {result && <section className="projectionResults"><div className="sectionTitle"><div><span>RESULTADO TEMPORÁRIO</span><h3>Horizonte com “{result.description}”</h3></div><p>Total simulado: {formatMoney(result.totalPurchase)}</p></div><div className="projectionTimeline">{result.rows.map((month) => <article key={month.month} className={month.netPosition < 0 ? 'projectionDanger' : ''}><span>{formatMonthInput(month.month)}</span><strong className={month.netPosition < 0 ? 'negativeText' : 'positiveText'}>{formatMoney(month.netPosition)}</strong><small>Posição líquida</small><dl><div><dt>Dinheiro</dt><dd>{formatMoney(month.cashBalance)}</dd></div><div><dt>Cartões</dt><dd>{formatMoney(month.cardDebt)}</dd></div><div><dt>Entradas</dt><dd>{formatMoney(month.income)}</dd></div><div><dt>Saídas</dt><dd>{formatMoney(month.expenses)}</dd></div></dl>{month.simulation && <p>Simulação: parcela {month.simulation.installment}/{month.simulation.installmentCount} · {formatMoney(month.simulation.value)}</p>}{month.missingRecurringCount > 0 && <em>+ {month.missingRecurringCount} recorrência(s) ainda não processada(s)</em>}</article>)}</div></section>}
+    {result && <section className="projectionResults"><div className="sectionTitle"><div><span>RESULTADO TEMPORÁRIO</span><h3>Horizonte com “{result.description}”</h3></div><p>Total simulado: {formatMoney(result.totalPurchase)}</p></div><div className="projectionTimeline">{result.rows.map((month) => <article key={month.month} className={month.netPosition < 0 ? 'projectionDanger' : ''}><span>{formatMonthInput(month.month)}</span><strong className={month.netPosition < 0 ? 'negativeText' : 'positiveText'}>{formatMoney(month.netPosition)}</strong><small>Posição líquida</small><dl><div><dt>Dinheiro</dt><dd>{formatMoney(month.cashBalance)}</dd></div><div><dt>Cartões</dt><dd>{formatMoney(month.cardDebt)}</dd></div><div><dt>Entradas</dt><dd>{formatMoney(month.income)}</dd></div><div><dt>Saídas</dt><dd>{formatMoney(month.expenses)}</dd></div></dl>{month.simulation && <p>Simulação: parcela {month.simulation.installment}/{month.simulation.installmentCount} · {formatMoney(month.simulation.value)}</p>}{month.missingRecurringCount > 0 && <em>+ {month.missingRecurringCount} recorrência(s) provisionada(s)</em>}</article>)}</div></section>}
     <OperationModal operation={operation} onClose={() => setOperation(CLOSED_OPERATION)}/>
     <footer><span>PROJEÇÃO · SOMENTE MEMÓRIA</span><p>Nenhum lançamento é criado ou alterado.</p><span>V0.7</span></footer>
   </main>
@@ -589,7 +522,7 @@ function DashboardScreen({ user, settings, onNavigate, onSettingsUpdate, onSignO
       <button className="primaryAction" onClick={() => onNavigate('launch')}><span>＋</span><strong>Novo lançamento</strong><small>Entrada, saída ou parcela</small></button>
       <button className="projectionAction" onClick={() => onNavigate('projection')}><span>◫</span><strong>Nova projeção</strong><small>Simule uma compra sem salvar</small></button>
       <button onClick={() => onNavigate('cards')}><span>▣</span><strong>Cartões</strong><small>Pagar fatura</small></button>
-      <button onClick={() => onNavigate('recurring')}><span>↻</span><strong>Recorrências</strong><small>Regras e processamento mensal</small></button>
+      <button onClick={() => onNavigate('recurring')}><span>↻</span><strong>Recorrências</strong><small>Regras e provisionamentos automáticos</small></button>
       <button disabled={Boolean(loading)} onClick={syncSpreadsheet}><span>⇅</span><strong>{loading === 'planilha' ? 'Sincronizando…' : 'Sync planilha'}</strong><small>Estrutura e lançamentos</small></button>
       <button disabled={Boolean(loading)} onClick={syncSettings}><span>⚙</span><strong>{loading === 'configuracoes' ? 'Sincronizando…' : 'Sync configuração'}</strong><small>Carteiras e categorias</small></button>
     </nav>

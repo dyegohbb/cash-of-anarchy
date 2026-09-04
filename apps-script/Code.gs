@@ -189,8 +189,10 @@ function getDashboardResponse(rawCompetence) {
   const headerMap = ensureLaunchHeaders(sheet);
   const storedLaunches = readDashboardLaunches(sheet, headerMap);
   const actualLaunches = storedLaunches.filter((item) => !item.recurringId || item.origin === 'Recorrência faturada');
-  const pending = storedLaunches.filter((item) => item.recurringId && item.origin !== 'Recorrência faturada')
-    .map((item) => ({ ...item, pending: true, origin: 'Recorrência provisionada' }));
+  const recurringSheet = getOrCreateSheet(getSpreadsheet(), CONFIG.RECURRING_SHEET);
+  const recurringMap = ensureHeaders(recurringSheet, CONFIG.RECURRING_HEADERS);
+  const rules = readRecurringRowsRaw(recurringSheet, recurringMap);
+  const pending = buildPendingRecurring(rules, actualLaunches, competence);
   const launches = actualLaunches;
   const settingsSheet = getOrCreateSheet(getSpreadsheet(), CONFIG.SETTINGS_SHEET);
   initializeSettingsSheet(settingsSheet);
@@ -278,6 +280,16 @@ function summarizeLaunches(items) {
 
 function isCashLaunch(item) {
   return item.walletType === 'Conta' || (!item.walletType && String(item.wallet || '').trim().toLowerCase() === 'dinheiro');
+}
+
+function buildPendingRecurring(rules, actualLaunches, competence) {
+  const billedKeys = new Set(actualLaunches.filter((item) => item.recurringId).map((item) => `${item.recurringId}|${item.competence}`));
+  return rules.filter((rule) => rule.status === 'Ativa' && rule.periodicity === 'Mensal' && rule.initialCompetence
+      && compareCompetences(rule.initialCompetence, competence) <= 0 && !billedKeys.has(`${rule.recurringId}|${competence}`))
+    .map((rule) => ({ id: `provision:${rule.recurringId}:${competence}`, groupId: '', recurringId: rule.recurringId,
+      description: rule.description, value: rule.value, movementType: rule.movementType, category: rule.category || 'Sem categoria',
+      wallet: rule.wallet || 'Sem carteira', paymentType: 'Recorrente', installment: 1, installmentCount: 1, competence,
+      launchDate: '', origin: 'Recorrência provisionada', purchaseTotal: Math.abs(rule.value), pending: true }));
 }
 
 function summarizeFinancialPosition(items) {
@@ -404,40 +416,8 @@ function processRecurring(rawCompetence) {
   const recurringMap = ensureHeaders(recurringSheet, CONFIG.RECURRING_HEADERS);
   const rules = readRecurringRowsRaw(recurringSheet, recurringMap)
     .filter((item) => item.status === 'Ativa' && item.periodicity === 'Mensal' && item.initialCompetence && compareCompetences(item.initialCompetence, competence) <= 0);
-
-  const lock = LockService.getScriptLock();
-  lock.waitLock(10000);
-  let generated = 0;
-  let alreadyExisting = 0;
-  try {
-    const launches = getOrCreateSheet(spreadsheet, CONFIG.LAUNCHES_SHEET);
-    const launchMap = ensureLaunchHeaders(launches);
-    const existingKeys = readRecurringLaunchKeys(launches, launchMap);
-    const insertedAt = new Date();
-    const rows = [];
-    rules.forEach((rule) => {
-      const key = `${rule.recurringId}|${competence}`;
-      if (existingKeys.has(key)) { alreadyExisting += 1; return; }
-      rows.push(buildLaunchRow(launchMap, {
-        id: Utilities.getUuid(), groupId: Utilities.getUuid(), recurringId: rule.recurringId,
-        description: rule.description, value: rule.value, movementType: rule.movementType,
-        category: rule.category, wallet: rule.wallet, paymentType: 'À vista',
-        installmentNumber: 1, installmentCount: 1, competence,
-        launchDate: dateForCompetence(rule.startDate, competence), insertedAt, origin: 'Recorrência provisionada',
-      }));
-      existingKeys.add(key);
-    });
-    if (rows.length) launches.getRange(launches.getLastRow() + 1, 1, rows.length, launchMap.headers.length).setValues(rows);
-    generated = rows.length;
-  } finally {
-    lock.releaseLock();
-  }
-  const message = generated
-    ? `${generated} recorrência(s) provisionada(s).${alreadyExisting ? ` ${alreadyExisting} já existia(m).` : ''}`
-    : rules.length
-      ? `${alreadyExisting} lançamento(s) dessa competência já existia(m). Nenhuma duplicação foi criada.`
-      : 'Nenhuma recorrência ativa começa nessa competência ou antes dela.';
-  return jsonResponse({ ok: true, competencia: competence, recorrenciasElegiveis: rules.length, lancamentosCriados: generated, lancamentosExistentes: alreadyExisting, message });
+  return jsonResponse({ ok: true, competencia: competence, recorrenciasElegiveis: rules.length, lancamentosCriados: 0,
+    message: 'Não é mais necessário processar recorrências. Os provisionamentos são gerados automaticamente.' });
 }
 
 function removeRecurringLaunches(rawCompetence) {
@@ -491,15 +471,16 @@ function effectRecurring(payload) {
   const launches = getOrCreateSheet(spreadsheet, CONFIG.LAUNCHES_SHEET);
   const launchMap = ensureLaunchHeaders(launches);
   const rows = launches.getLastRow() > 1 ? launches.getRange(2, 1, launches.getLastRow() - 1, launchMap.headers.length).getValues() : [];
-  const rowIndex = rows.findIndex((row) => String(row[launchMap.indexes['recurringId']]) === recurringId && normalizeCompetence(row[launchMap.indexes['Competência']]) === competence);
-  if (rowIndex < 0) throw new Error('Processe esta competência antes de faturar a recorrência.');
-  if (String(rows[rowIndex][launchMap.indexes['Origem']]) === 'Recorrência faturada') throw new Error('Esta recorrência já foi faturada nessa competência.');
+  const matchingIndexes = [];
+  rows.forEach((row, index) => { if (String(row[launchMap.indexes['recurringId']]) === recurringId && normalizeCompetence(row[launchMap.indexes['Competência']]) === competence) matchingIndexes.push(index); });
+  if (matchingIndexes.some((index) => String(rows[index][launchMap.indexes['Origem']]) === 'Recorrência faturada')) throw new Error('Esta recorrência já foi faturada nessa competência.');
   const value = normalizeSignedValue(inputValue, rule.movementType);
-  const current = rows[rowIndex].slice();
-  current[launchMap.indexes['Valor']] = value; current[launchMap.indexes['Tipo']] = rule.movementType;
-  current[launchMap.indexes['Carteira']] = wallet; current[launchMap.indexes['Data do lançamento']] = launchDate;
-  current[launchMap.indexes['Origem']] = 'Recorrência faturada'; current[launchMap.indexes['Data de inserção']] = new Date();
-  launches.getRange(rowIndex + 2, 1, 1, launchMap.headers.length).setValues([current]);
+  const row = buildLaunchRow(launchMap, { id: Utilities.getUuid(), groupId: Utilities.getUuid(), recurringId,
+    description: rule.description, value, movementType: rule.movementType, category: rule.category, wallet,
+    paymentType: 'À vista', installmentNumber: 1, installmentCount: 1, competence, launchDate,
+    insertedAt: new Date(), origin: 'Recorrência faturada' });
+  launches.getRange(launches.getLastRow() + 1, 1, 1, launchMap.headers.length).setValues([row]);
+  matchingIndexes.reverse().forEach((index) => launches.deleteRow(index + 2));
   return jsonResponse({ ok: true, message: 'Recorrência faturada e incluída nos saldos.' });
 }
 

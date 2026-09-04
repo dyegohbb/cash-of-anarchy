@@ -18,7 +18,7 @@ MVP gratuito para registrar entradas e saídas em uma planilha Google por uma in
 - `groupId` único por lançamento, compartilhado por todas as parcelas;
 - entradas armazenadas como valores positivos e saídas como valores negativos;
 - gerenciamento de recorrências mensais com criação, listagem, edição e status;
-- geração incremental protegida pela combinação `recurringId + competência`.
+- provisionamentos virtuais mensais protegidos pela combinação `recurringId + competência`.
 - dashboard inicial por competência com entradas, saídas, saldo, dívidas futuras, categorias, carteiras e planejamento de até 18 competências;
 - atalhos no dashboard para novo lançamento, recorrências, sincronização da planilha e sincronização das configurações.
 
@@ -80,7 +80,7 @@ Em `Tipo da carteira`, use `Conta` para as fontes de dinheiro e `Cartão` para c
 
 O pagamento de cartão cria duas linhas vinculadas: uma saída na conta escolhida e uma entrada no cartão.
 
-Processar uma recorrência cria apenas um provisionamento: ele aparece no extrato, mas não altera entradas, saídas, saldos, faturas ou categorias. Pelo botão **Faturar**, o usuário confirma a origem, a data e o valor real; somente então a linha passa a ser contabilizada. A origem padrão é a carteira cadastrada na regra. Uma recorrência que já possua ao menos um registro faturado não pode ser excluída, mas pode ser marcada como inativa.
+Cada regra ativa gera automaticamente um provisionamento virtual em todas as competências desde seu início. Ele aparece no extrato, mas não cria linha em `Lancamentos` e não altera entradas, saídas, saldos, faturas ou categorias. Pelo botão **Faturar**, o usuário confirma a origem, a data e o valor real; somente então uma linha é criada e contabilizada. A origem padrão é a carteira cadastrada na regra. Uma recorrência que já possua ao menos um registro faturado não pode ser excluída, mas pode ser marcada como inativa.
 
 ### Aba Lancamentos
 
@@ -90,7 +90,7 @@ As novas colunas são adicionadas preservando os registros antigos. `Data` é mi
 
 Armazena as regras mensais separadamente dos lançamentos efetivos. Cada regra possui `recurringId`, dados financeiros, início, competência inicial, periodicidade, status e datas de auditoria. Criar uma recorrência não gera lançamentos futuros antecipadamente.
 
-O backend disponibiliza `processarRecorrentes` para processar uma competência quando houver um fluxo de consulta ou fechamento. A chave lógica `recurringId + competência` impede duplicação. Lançamentos gerados têm `ID` e `groupId` próprios e compartilham o `recurringId` da regra.
+Não existe etapa manual de processamento. O backend monta os provisionamentos diretamente das regras. Ao faturar, o lançamento recebe `ID` e `groupId` próprios e preserva o `recurringId` da regra; a chave lógica `recurringId + competência` impede duplicação.
 
 > Não selecione **Somente eu** na implantação Web App usada pelo GitHub Pages. Essa opção protege a URL com a sessão web do Google e impede a chamada `fetch` entre os dois domínios. Nesta implementação, o endpoint é alcançável, mas nenhuma leitura ou escrita ocorre sem token Google válido da conta autorizada.
 
