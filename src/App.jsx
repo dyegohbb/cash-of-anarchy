@@ -311,6 +311,14 @@ function RecurringScreen({ settings, onBack }) {
     finally { setLoading('') }
   }
 
+  async function deleteRule(item) {
+    if (!window.confirm(`Excluir a recorrência “${item.descricao}”? Provisionamentos ainda não faturados também serão removidos.`)) return
+    setLoading('excluir')
+    try { const result = await callApi({ action: 'excluirRecorrente', recurringId: item.recurringId }); setMessage({ kind: 'success', text: result.message }); await loadItems() }
+    catch (error) { setMessage({ kind: 'error', text: error.message }) }
+    finally { setLoading('') }
+  }
+
   return <main className="shell">
     <header className="brand"><button className="backButton" onClick={onBack} aria-label="Voltar para novo lançamento">←</button><div><p className="eyebrow">GERENCIAMENTO</p><h1>Lançamentos recorrentes</h1></div></header>
     <section className="recurringHero"><div><p className="kicker">RECORRÊNCIAS</p><h2>Todo mês.<br /><em>Sem esquecer.</em></h2></div>
@@ -331,7 +339,7 @@ function RecurringScreen({ settings, onBack }) {
         <div className="recurringCardTop"><div><span className="recurringCategory">{item.categoria}</span><h3>{item.descricao}</h3></div><span className={`statusBadge ${item.status === 'Ativa' ? 'active' : 'inactive'}`}>{item.status}</span></div>
         <strong className={`recurringValue ${item.valor < 0 ? 'amountNegative' : 'amountPositive'}`}>{formatMoney(item.valor)}</strong>
         <dl><div><dt>Carteira</dt><dd>{item.carteira}</dd></div><div><dt>Início</dt><dd>{formatDateBr(item.dataInicio)}</dd></div><div><dt>Competência inicial</dt><dd>{item.competenciaInicial}</dd></div><div><dt>Recorrência</dt><dd>{item.periodicidade}</dd></div></dl>
-        <button className="editButton" onClick={() => openEdit(item)}>Editar recorrência <span>→</span></button>
+        <div className="recurringCardActions"><button className="editButton" onClick={() => openEdit(item)}>Editar recorrência <span>→</span></button><button className="dangerButton" disabled={Boolean(loading)} onClick={() => deleteRule(item)}>Excluir recorrência</button></div>
       </article>)}
     </section> : <section className="panel recurringFormPanel">
       <div className="panelHeading"><div><span>R</span><h3>{form.recurringId ? 'Editar recorrência' : 'Nova recorrência'}</h3></div><button className="cancelButton" onClick={() => setMode('list')}>Cancelar</button></div>
@@ -499,7 +507,7 @@ function CardsScreen({ settings, onBack }) {
   </main>
 }
 
-function DashboardScreen({ user, onNavigate, onSettingsUpdate, onSignOut, valuesVisible, onToggleValues }) {
+function DashboardScreen({ user, settings, onNavigate, onSettingsUpdate, onSignOut, valuesVisible, onToggleValues }) {
   const [competence, setCompetence] = useState(localMonthValue)
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState('dashboard')
@@ -559,7 +567,7 @@ function DashboardScreen({ user, onNavigate, onSettingsUpdate, onSignOut, values
     && (!extractFilters.wallet || item.wallet === extractFilters.wallet)
   ))
   const installmentTotal = installmentPayments.reduce((total, item) => total + item.value, 0)
-  const extractTotal = filteredLaunches.reduce((total, item) => total + item.value, 0)
+  const extractTotal = filteredLaunches.filter((item) => !item.pending).reduce((total, item) => total + item.value, 0)
   const categoryTotal = categories.reduce((total, item) => total + item.expenses, 0)
   const walletBalances = data?.saldosCarteiras || []
   const walletTotal = position.netPosition
@@ -567,7 +575,7 @@ function DashboardScreen({ user, onNavigate, onSettingsUpdate, onSignOut, values
 
   async function confirmRecurring(event) {
     event.preventDefault()
-    try { await callApi({ action: 'efetivarRecorrente', recurringId: effecting.recurringId, competencia: effecting.competence, dataLancamento: effecting.date, valor: Number(effecting.amount) }); setEffecting(null); await loadDashboard(competence, false, 'sync') }
+    try { await callApi({ action: 'efetivarRecorrente', recurringId: effecting.recurringId, competencia: effecting.competence, dataLancamento: effecting.date, valor: Number(effecting.amount), carteira: effecting.wallet }); setEffecting(null); await loadDashboard(competence, false, 'sync') }
     catch (error) { setMessage({ kind: 'error', text: error.message }) }
   }
 
@@ -586,7 +594,7 @@ function DashboardScreen({ user, onNavigate, onSettingsUpdate, onSignOut, values
       <button disabled={Boolean(loading)} onClick={syncSettings}><span>⚙</span><strong>{loading === 'configuracoes' ? 'Sincronizando…' : 'Sync configuração'}</strong><small>Carteiras e categorias</small></button>
     </nav>
 
-    {data?.totalRecorrenciasPendentes > 0 && <div className="pendingAlert" role="status"><strong>{data.totalRecorrenciasPendentes} recorrência(s) pendente(s) nesta competência</strong><span>Elas já entram nos cálculos. Efetive cada uma pelo extrato quando souber a data e o valor real.</span></div>}
+    {data?.totalRecorrenciasPendentes > 0 && <div className="pendingAlert" role="status"><strong>{data.totalRecorrenciasPendentes} recorrência(s) provisionada(s) nesta competência</strong><span>Elas ainda não alteram saldos ou faturas. Fature pelo extrato quando souber a origem, a data e o valor real.</span></div>}
 
     {message.text && <div className={`notice dashboardNotice ${message.kind}`} role="status">{message.text}</div>}
     <SheetLoadingOverlay visible={loading === 'dashboard' || loading === 'planilha'} context={loadingContext} competence={competence} />
@@ -612,10 +620,10 @@ function DashboardScreen({ user, onNavigate, onSettingsUpdate, onSignOut, values
           <label>Categoria<select value={extractFilters.category} onChange={(event) => setExtractFilters((current) => ({ ...current, category: event.target.value }))}><option value="">Todas</option>{availableCategories.map((category) => <option key={category} value={category}>{category}</option>)}</select></label>
           <label>Carteira<select value={extractFilters.wallet} onChange={(event) => setExtractFilters((current) => ({ ...current, wallet: event.target.value }))}><option value="">Todas</option>{availableWallets.map((wallet) => <option key={wallet} value={wallet}>{wallet}</option>)}</select></label>
         </div>
-        <div className="futureTable currentLaunches">{filteredLaunches.length ? <>{filteredLaunches.map((item) => <article className={item.pending ? 'pendingLaunch' : ''} key={item.id || `${item.description}-${item.value}`}><div><span>{item.pending ? 'AGENDADO · ' : ''}{item.category}</span><strong>{item.description}</strong><small>{item.wallet}{item.installmentCount > 1 ? ` · Parcela ${item.installment}/${item.installmentCount}` : ''}</small></div><b className={item.value < 0 ? 'negativeText' : 'positiveText'}>{money(item.value)}</b>{item.pending && <button className="effectButton" onClick={() => setEffecting({ ...item, date: localDateValue(), amount: String(Math.abs(item.value)) })}>Efetivar</button>}</article>)}<div className="listTotal"><span>Total do extrato filtrado · {filteredLaunches.length} registro(s)</span><strong className={extractTotal < 0 ? 'negativeText' : 'positiveText'}>{money(extractTotal)}</strong></div></> : <div className="dashboardEmpty">Nenhum lançamento encontrado com esses filtros.</div>}</div></section></div>
+        <div className="futureTable currentLaunches">{filteredLaunches.length ? <>{filteredLaunches.map((item) => <article className={item.pending ? 'pendingLaunch' : ''} key={item.id || `${item.description}-${item.value}`}><div><span>{item.pending ? 'PROVISIONADO · ' : ''}{item.category}</span><strong>{item.description}</strong><small>{item.wallet}{item.installmentCount > 1 ? ` · Parcela ${item.installment}/${item.installmentCount}` : ''}{item.pending ? ' · ainda não contabilizado' : ''}</small></div><b className={item.value < 0 ? 'negativeText' : 'positiveText'}>{money(item.value)}</b>{item.pending && <button className="effectButton" onClick={() => setEffecting({ ...item, date: localDateValue(), amount: String(Math.abs(item.value)) })}>Faturar</button>}</article>)}<div className="listTotal"><span>Total contabilizado · {filteredLaunches.filter((item) => !item.pending).length} registro(s)</span><strong className={extractTotal < 0 ? 'negativeText' : 'positiveText'}>{money(extractTotal)}</strong></div></> : <div className="dashboardEmpty">Nenhum lançamento encontrado com esses filtros.</div>}</div></section></div>
       <section className="dashboardSection categoriesAfterExtract"><div className="sectionTitle"><div><span>CATEGORIAS</span><h3>Para onde vai</h3></div><p>Saídas do mês por categoria.</p></div><div className="breakdownList">{categories.length ? <>{categories.map((item) => <div key={item.name}><div><span>{item.name}</span><strong>{money(item.expenses)}</strong></div><i><b style={{ width: `${(item.expenses / biggestCategory) * 100}%` }} /></i></div>)}<div className="listTotal"><span>Total das saídas</span><strong className="negativeText">{money(categoryTotal)}</strong></div></> : <div className="dashboardEmpty">Sem despesas nesta competência.</div>}</div></section>
     </>}
-    {effecting && <div className="operationOverlay"><section className="operationModal"><p className="kicker">EFETIVAR RECORRÊNCIA</p><h3>{effecting.description}</h3><form className="effectForm" onSubmit={confirmRecurring}><label>Data real<input required type="date" value={effecting.date} onChange={(e) => setEffecting({...effecting, date:e.target.value})}/></label><label>Valor real (R$)<input required min="0.01" step="0.01" type="number" inputMode="decimal" value={effecting.amount} onChange={(e) => setEffecting({...effecting, amount:e.target.value})}/></label><div><button type="button" className="cancelButton" onClick={() => setEffecting(null)}>Cancelar</button><button className="submitButton">Efetivar <span>→</span></button></div></form></section></div>}
+    {effecting && <div className="operationOverlay"><section className="operationModal"><p className="kicker">FATURAR RECORRÊNCIA</p><h3>{effecting.description}</h3><form className="effectForm" onSubmit={confirmRecurring}><label>Origem<select required value={effecting.wallet} onChange={(e) => setEffecting({...effecting, wallet:e.target.value})}>{[...new Set([...(settings.carteiras || []), effecting.wallet])].filter(Boolean).map((wallet) => <option key={wallet}>{wallet}</option>)}</select></label><label>Data real<input required type="date" value={effecting.date} onChange={(e) => setEffecting({...effecting, date:e.target.value})}/></label><label>Valor real (R$)<input required min="0.01" step="0.01" type="number" inputMode="decimal" value={effecting.amount} onChange={(e) => setEffecting({...effecting, amount:e.target.value})}/></label><div><button type="button" className="cancelButton" onClick={() => setEffecting(null)}>Cancelar</button><button className="submitButton">Faturar <span>→</span></button></div></form></section></div>}
     <footer><span>DASHBOARD FINANCEIRO</span><p>Dados lidos diretamente do Google Sheets.</p><span>V0.6</span></footer>
   </main>
 }
@@ -701,7 +709,7 @@ function App() {
 
   if (!user) return <AccessGate onAccess={grantAccess} />
   if (view === 'home') return <HomeScreen user={user} onSignOut={signOut} onNavigate={setView}/>
-  if (view === 'dashboard') return <DashboardScreen user={user} onSignOut={signOut} onNavigate={setView} valuesVisible={valuesVisible} onToggleValues={() => setValuesVisible((visible) => { sessionStorage.setItem(VALUES_VISIBLE_KEY, String(!visible)); return !visible })} onSettingsUpdate={(nextSettings) => { setSettings(nextSettings); setSettingsLoaded(true) }} />
+  if (view === 'dashboard') return <DashboardScreen user={user} settings={settings} onSignOut={signOut} onNavigate={setView} valuesVisible={valuesVisible} onToggleValues={() => setValuesVisible((visible) => { sessionStorage.setItem(VALUES_VISIBLE_KEY, String(!visible)); return !visible })} onSettingsUpdate={(nextSettings) => { setSettings(nextSettings); setSettingsLoaded(true) }} />
   if (view === 'cards') return <CardsScreen settings={settings} onBack={() => setView('home')}/>
   if (view === 'recurring') return <RecurringScreen settings={settings} onBack={() => setView('home')} />
   if (view === 'projection') return <ProjectionScreen settings={settings} onBack={() => setView('home')} />

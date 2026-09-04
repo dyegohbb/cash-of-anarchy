@@ -51,6 +51,7 @@ function doPost(event) {
     if (payload.action === 'listarRecorrentes') return listRecurringResponse();
     if (payload.action === 'adicionarRecorrente') return addRecurring(payload);
     if (payload.action === 'atualizarRecorrente') return updateRecurring(payload);
+    if (payload.action === 'excluirRecorrente') return deleteRecurring(payload.recurringId);
     if (payload.action === 'processarRecorrentes') return processRecurring(payload.competencia);
     if (payload.action === 'removerLancamentosRecorrentes') return removeRecurringLaunches(payload.competencia);
     if (payload.action === 'efetivarRecorrente') return effectRecurring(payload);
@@ -186,16 +187,15 @@ function getDashboardResponse(rawCompetence) {
   if (!competence) throw new Error('Informe uma competência válida no formato MM/AAAA.');
   const sheet = getOrCreateSheet(getSpreadsheet(), CONFIG.LAUNCHES_SHEET);
   const headerMap = ensureLaunchHeaders(sheet);
-  const actualLaunches = readDashboardLaunches(sheet, headerMap);
-  const recurringSheet = getOrCreateSheet(getSpreadsheet(), CONFIG.RECURRING_SHEET);
-  const recurringMap = ensureHeaders(recurringSheet, CONFIG.RECURRING_HEADERS);
-  const rules = readRecurringRowsRaw(recurringSheet, recurringMap);
-  const pending = buildPendingRecurring(rules, actualLaunches, addMonthsToCompetence(competence, 17));
-  const launches = actualLaunches.concat(pending);
+  const storedLaunches = readDashboardLaunches(sheet, headerMap);
+  const actualLaunches = storedLaunches.filter((item) => !item.recurringId || item.origin === 'Recorrência faturada');
+  const pending = storedLaunches.filter((item) => item.recurringId && item.origin !== 'Recorrência faturada')
+    .map((item) => ({ ...item, pending: true, origin: 'Recorrência provisionada' }));
+  const launches = actualLaunches;
   const settingsSheet = getOrCreateSheet(getSpreadsheet(), CONFIG.SETTINGS_SHEET);
   initializeSettingsSheet(settingsSheet);
   const accountNames = new Set(readSettings(settingsSheet).contas);
-  launches.forEach((item) => { item.walletType = accountNames.has(item.wallet) ? 'Conta' : 'Cartão'; });
+  actualLaunches.concat(pending).forEach((item) => { item.walletType = accountNames.has(item.wallet) ? 'Conta' : 'Cartão'; });
   const purchaseTotals = launches.reduce((totals, item) => {
     if (item.groupId && item.installmentCount > 1) totals[item.groupId] = (totals[item.groupId] || 0) + Math.abs(item.value);
     return totals;
@@ -242,7 +242,7 @@ function getDashboardResponse(rawCompetence) {
     categorias: categories,
     carteiras: wallets,
     saldosCarteiras: groupDashboardValues(accumulated, 'wallet', false),
-    lancamentos: selected.sort((left, right) => Math.abs(right.value) - Math.abs(left.value)),
+    lancamentos: selected.concat(pending.filter((item) => item.competence === competence)).sort((left, right) => Math.abs(right.value) - Math.abs(left.value)),
     recorrenciasPendentes: pending.filter((item) => item.competence === competence),
     totalRecorrenciasPendentes: pending.filter((item) => item.competence === competence).length,
     dividasFuturas: upcomingDebts,
@@ -278,22 +278,6 @@ function summarizeLaunches(items) {
 
 function isCashLaunch(item) {
   return item.walletType === 'Conta' || (!item.walletType && String(item.wallet || '').trim().toLowerCase() === 'dinheiro');
-}
-
-function buildPendingRecurring(rules, launches, lastCompetence) {
-  const existing = new Set(launches.filter((item) => item.recurringId).map((item) => `${item.recurringId}|${item.competence}`));
-  const result = [];
-  rules.filter((rule) => rule.status === 'Ativa' && rule.periodicity === 'Mensal' && rule.initialCompetence).forEach((rule) => {
-    for (let month = rule.initialCompetence, guard = 0; compareCompetences(month, lastCompetence) <= 0 && guard < 240; month = addMonthsToCompetence(month, 1), guard += 1) {
-      if (existing.has(`${rule.recurringId}|${month}`)) continue;
-      result.push({ id: `pending:${rule.recurringId}:${month}`, groupId: '', recurringId: rule.recurringId,
-        description: rule.description, value: rule.value, movementType: rule.movementType,
-        category: rule.category || 'Sem categoria', wallet: rule.wallet || 'Sem carteira', paymentType: 'Recorrente',
-        installment: 1, installmentCount: 1, competence: month, launchDate: '', origin: 'Recorrência prevista',
-        purchaseTotal: Math.abs(rule.value), pending: true });
-    }
-  });
-  return result;
 }
 
 function summarizeFinancialPosition(items) {
@@ -439,7 +423,7 @@ function processRecurring(rawCompetence) {
         description: rule.description, value: rule.value, movementType: rule.movementType,
         category: rule.category, wallet: rule.wallet, paymentType: 'À vista',
         installmentNumber: 1, installmentCount: 1, competence,
-        launchDate: dateForCompetence(rule.startDate, competence), insertedAt,
+        launchDate: dateForCompetence(rule.startDate, competence), insertedAt, origin: 'Recorrência provisionada',
       }));
       existingKeys.add(key);
     });
@@ -449,7 +433,7 @@ function processRecurring(rawCompetence) {
     lock.releaseLock();
   }
   const message = generated
-    ? `${generated} lançamento(s) recorrente(s) criado(s).${alreadyExisting ? ` ${alreadyExisting} já existia(m).` : ''}`
+    ? `${generated} recorrência(s) provisionada(s).${alreadyExisting ? ` ${alreadyExisting} já existia(m).` : ''}`
     : rules.length
       ? `${alreadyExisting} lançamento(s) dessa competência já existia(m). Nenhuma duplicação foi criada.`
       : 'Nenhuma recorrência ativa começa nessa competência ou antes dela.';
@@ -471,9 +455,10 @@ function removeRecurringLaunches(rawCompetence) {
     const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, headerMap.headers.length).getValues();
     const competenceIndex = headerMap.indexes['Competência'];
     const recurringIndex = headerMap.indexes['recurringId'];
+    const originIndex = headerMap.indexes['Origem'];
     const rowsToDelete = [];
     rows.forEach((row, index) => {
-      if (normalizeCompetence(row[competenceIndex]) === competence && String(row[recurringIndex]).trim()) rowsToDelete.push(index + 2);
+      if (normalizeCompetence(row[competenceIndex]) === competence && String(row[recurringIndex]).trim() && String(row[originIndex]) !== 'Recorrência faturada') rowsToDelete.push(index + 2);
     });
     rowsToDelete.reverse().forEach((rowNumber) => sheet.deleteRow(rowNumber));
     removed = rowsToDelete.length;
@@ -485,7 +470,7 @@ function removeRecurringLaunches(rawCompetence) {
     ok: true,
     competencia: competence,
     lancamentosRemovidos: removed,
-    message: removed ? `${removed} lançamento(s) recorrente(s) removido(s).` : 'Nenhum lançamento recorrente encontrado nessa competência.',
+    message: removed ? `${removed} provisionamento(s) removido(s).` : 'Nenhum provisionamento removível encontrado nessa competência. Registros faturados são protegidos.',
   });
 }
 
@@ -494,21 +479,44 @@ function effectRecurring(payload) {
   const competence = normalizeCompetence(payload.competencia);
   const launchDate = normalizeDate(payload.dataLancamento);
   const inputValue = Number(payload.valor);
-  if (!recurringId || !competence || !launchDate || !Number.isFinite(inputValue) || inputValue === 0) throw new Error('Informe recorrência, competência, data e valor válidos.');
+  const wallet = sanitizeText(payload.carteira, 60);
+  if (!recurringId || !competence || !launchDate || !wallet || !Number.isFinite(inputValue) || inputValue === 0) throw new Error('Informe recorrência, competência, origem, data e valor válidos.');
   const spreadsheet = getSpreadsheet();
   const recurringSheet = getOrCreateSheet(spreadsheet, CONFIG.RECURRING_SHEET);
   const recurringMap = ensureHeaders(recurringSheet, CONFIG.RECURRING_HEADERS);
   const rule = readRecurringRowsRaw(recurringSheet, recurringMap).find((item) => item.recurringId === recurringId);
   if (!rule || rule.status !== 'Ativa') throw new Error('Recorrência ativa não encontrada.');
+  const settingsSheet = getOrCreateSheet(spreadsheet, CONFIG.SETTINGS_SHEET); initializeSettingsSheet(settingsSheet);
+  if (!readSettings(settingsSheet).carteiras.includes(wallet)) throw new Error('A origem selecionada não existe nas configurações.');
   const launches = getOrCreateSheet(spreadsheet, CONFIG.LAUNCHES_SHEET);
   const launchMap = ensureLaunchHeaders(launches);
-  if (readRecurringLaunchKeys(launches, launchMap).has(`${recurringId}|${competence}`)) throw new Error('Esta recorrência já foi efetivada nessa competência.');
+  const rows = launches.getLastRow() > 1 ? launches.getRange(2, 1, launches.getLastRow() - 1, launchMap.headers.length).getValues() : [];
+  const rowIndex = rows.findIndex((row) => String(row[launchMap.indexes['recurringId']]) === recurringId && normalizeCompetence(row[launchMap.indexes['Competência']]) === competence);
+  if (rowIndex < 0) throw new Error('Processe esta competência antes de faturar a recorrência.');
+  if (String(rows[rowIndex][launchMap.indexes['Origem']]) === 'Recorrência faturada') throw new Error('Esta recorrência já foi faturada nessa competência.');
   const value = normalizeSignedValue(inputValue, rule.movementType);
-  const row = buildLaunchRow(launchMap, { id: Utilities.getUuid(), groupId: Utilities.getUuid(), recurringId,
-    description: rule.description, value, movementType: rule.movementType, category: rule.category, wallet: rule.wallet,
-    paymentType: 'À vista', installmentNumber: 1, installmentCount: 1, competence, launchDate, insertedAt: new Date() });
-  launches.getRange(launches.getLastRow() + 1, 1, 1, launchMap.headers.length).setValues([row]);
-  return jsonResponse({ ok: true, message: 'Lançamento recorrente efetivado com sucesso.' });
+  const current = rows[rowIndex].slice();
+  current[launchMap.indexes['Valor']] = value; current[launchMap.indexes['Tipo']] = rule.movementType;
+  current[launchMap.indexes['Carteira']] = wallet; current[launchMap.indexes['Data do lançamento']] = launchDate;
+  current[launchMap.indexes['Origem']] = 'Recorrência faturada'; current[launchMap.indexes['Data de inserção']] = new Date();
+  launches.getRange(rowIndex + 2, 1, 1, launchMap.headers.length).setValues([current]);
+  return jsonResponse({ ok: true, message: 'Recorrência faturada e incluída nos saldos.' });
+}
+
+function deleteRecurring(rawRecurringId) {
+  const recurringId = sanitizeText(rawRecurringId, 100);
+  if (!recurringId) throw new Error('Recorrência inválida.');
+  const spreadsheet = getSpreadsheet();
+  const launches = getOrCreateSheet(spreadsheet, CONFIG.LAUNCHES_SHEET); const launchMap = ensureLaunchHeaders(launches);
+  const launchRows = launches.getLastRow() > 1 ? launches.getRange(2, 1, launches.getLastRow() - 1, launchMap.headers.length).getValues() : [];
+  const hasBilled = launchRows.some((row) => String(row[launchMap.indexes['recurringId']]) === recurringId && String(row[launchMap.indexes['Origem']]) === 'Recorrência faturada');
+  if (hasBilled) throw new Error('Esta recorrência possui registros faturados e não pode ser excluída. Você pode deixá-la inativa.');
+  const pendingRows = []; launchRows.forEach((row, index) => { if (String(row[launchMap.indexes['recurringId']]) === recurringId) pendingRows.push(index + 2); });
+  pendingRows.reverse().forEach((rowNumber) => launches.deleteRow(rowNumber));
+  const sheet = getOrCreateSheet(spreadsheet, CONFIG.RECURRING_SHEET); const map = ensureHeaders(sheet, CONFIG.RECURRING_HEADERS);
+  const found = findRecurringRow(sheet, map, recurringId); if (!found) throw new Error('Recorrência não encontrada.');
+  sheet.deleteRow(found.rowNumber);
+  return jsonResponse({ ok: true, message: 'Recorrência e seus provisionamentos foram excluídos.' });
 }
 
 function payCreditCard(payload) {
@@ -682,7 +690,7 @@ function buildLaunchRow(headerMap, data) {
   set('Competência', data.competence);
   set('Data do lançamento', data.launchDate);
   set('Data de inserção', data.insertedAt);
-  set('Origem', 'Frontend');
+  set('Origem', data.origin || 'Frontend');
   set('recurringId', data.recurringId || '');
   // Mantém a coluna legada de carteira preenchida quando existir.
   set('Forma de pagamento', data.wallet);

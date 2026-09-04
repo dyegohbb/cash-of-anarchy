@@ -78,7 +78,9 @@ Carteiras | Tipo da carteira | Dia de fechamento | Dia de vencimento | Categoria
 
 Em `Tipo da carteira`, use `Conta` para as fontes de dinheiro e `Cartão` para cartões de crédito. Para cartões, informe fechamento e vencimento com números de 1 a 31. O sistema usa a data da compra e o fechamento para calcular automaticamente a competência da fatura. A inicialização migra o formato antigo: `Dinheiro` vira conta e as demais carteiras viram cartões; revise essa classificação uma vez e use **Sync configuração**.
 
-O pagamento de cartão cria duas linhas vinculadas: uma saída na conta escolhida e uma entrada no cartão. Recorrências ativas ainda não efetivadas aparecem como agendadas no extrato e entram nos saldos; ao efetivar, o usuário informa a data e o valor real e a previsão é substituída pela linha gravada.
+O pagamento de cartão cria duas linhas vinculadas: uma saída na conta escolhida e uma entrada no cartão.
+
+Processar uma recorrência cria apenas um provisionamento: ele aparece no extrato, mas não altera entradas, saídas, saldos, faturas ou categorias. Pelo botão **Faturar**, o usuário confirma a origem, a data e o valor real; somente então a linha passa a ser contabilizada. A origem padrão é a carteira cadastrada na regra. Uma recorrência que já possua ao menos um registro faturado não pode ser excluída, mas pode ser marcada como inativa.
 
 ### Aba Lancamentos
 
